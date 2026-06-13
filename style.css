@@ -571,6 +571,8 @@ select:focus {
 .card input,
 .card select,
 .card textarea {
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.65rem 0.85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
@@ -1610,20 +1612,20 @@ select:focus {
 
 .modal-card label {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 0.4rem;
   font-size: 0.8rem;
   font-weight: 600;
   margin-bottom: 1.25rem;
-  justify-content: space-between;
 }
 
-.modal-card input {
+.modal-card input, .modal-card select {
   padding: 0.65rem 0.85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--paper-raised);
 }
+.modal-card select { width: 100%; font-family: inherit; }
 
 .modal-actions {
   display: flex;
@@ -2200,6 +2202,7 @@ select:focus {
    SHARE MODAL — ENHANCED
    ========================================================= */
 .modal-card--wide { max-width: 520px; }
+#modal-add-question .modal-card { max-width: 760px; }
 .share-tabs {
   display: flex;
   background: var(--paper);
@@ -2236,8 +2239,9 @@ select:focus {
   .friend-pick-list { grid-template-columns: 1fr; }
 }
 .friend-pick-list--compact { max-height: 160px; }
-.friend-pick-item {
+.modal-card .friend-pick-item {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 0.6rem;
   padding: 0.55rem 0.7rem;
@@ -2246,7 +2250,9 @@ select:focus {
   cursor: pointer;
   transition: all 0.1s;
   font-size: 0.88rem;
+  font-weight: 400;
   background: var(--paper-raised);
+  margin-bottom: 0;
 }
 .friend-pick-item:hover { border-color: var(--saffron); background: var(--saffron-soft); }
 .friend-pick-item input[type="checkbox"] {
@@ -3771,3 +3777,18 @@ select:focus {
   color: var(--text-soft, #888);
   margin: 1.25rem 0 0.5rem;
 }
+
+#add-question-json {
+  min-height: 320px;
+  resize: vertical;
+}
+
+.friend-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.friend-profile-head h3 { margin: 0; }
+.friend-profile-head .friend-avatar { width: 56px; height: 56px; font-size: 1.3rem; flex-shrink: 0; }
+
+.friend-card { cursor: pointer; }
