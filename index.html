@@ -866,6 +866,13 @@ Rules:
 <div class="modal" id="modal-share">
   <div class="modal-card modal-card--wide">
     <h3>Share Quiz</h3>
+
+    <!-- Quiz picker (only shown when challenging a friend directly, without a quiz already open) -->
+    <div class="setup-block" id="share-quiz-picker-block" style="display:none">
+      <label>Choose Quiz/Chapter</label>
+      <select id="share-quiz-picker"></select>
+    </div>
+
     <p class="setup-subtitle" id="share-quiz-total-note"><span id="share-quiz-total">25</span> questions total in this quiz</p>
 
     <!-- Question selection (same set sent to everyone) -->
@@ -971,6 +978,83 @@ Rules:
     </div>
 
     <button class="btn btn--ghost btn--block" id="btn-close-share" style="margin-top:0.75rem">Close</button>
+  </div>
+</div>
+
+<!-- ===== FRIEND PROFILE MODAL ===== -->
+<div class="modal" id="modal-friend-profile">
+  <div class="modal-card modal-card--wide">
+    <div class="friend-profile-head">
+      <div class="friend-avatar" id="friend-profile-avatar">??</div>
+      <div>
+        <h3 id="friend-profile-name">Friend</h3>
+        <span class="friend-rollno" id="friend-profile-rollno"></span>
+      </div>
+    </div>
+
+    <div class="profile-stats-grid" style="margin-top:1rem">
+      <div class="profile-stat-card">
+        <span class="profile-stat-icon">📚</span>
+        <span class="profile-stat-value" id="friend-stat-total-quizzes">0</span>
+        <span class="profile-stat-label">Quizzes Attempted</span>
+      </div>
+      <div class="profile-stat-card">
+        <span class="profile-stat-icon">🎯</span>
+        <span class="profile-stat-value" id="friend-stat-avg-accuracy">0%</span>
+        <span class="profile-stat-label">Avg. Accuracy</span>
+      </div>
+    </div>
+
+    <div class="profile-section">
+      <h3 class="section-label">Activity Calendar</h3>
+      <div class="contribution-calendar-wrap">
+        <div class="contribution-months" id="friend-contribution-months"></div>
+        <div class="contribution-body">
+          <div class="contribution-day-labels">
+            <span>Mon</span><span>Wed</span><span>Fri</span>
+          </div>
+          <div class="contribution-grid" id="friend-contribution-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="section-label" style="margin-top:1rem">📤 Public Library</h3>
+    <div class="public-library-grid" id="friend-public-library-grid"></div>
+    <p class="public-library-empty" id="friend-public-library-empty" style="display:none">
+      This friend hasn't made anything public yet.
+    </p>
+
+    <button class="btn btn--ghost btn--block" id="btn-close-friend-profile" style="margin-top:1rem">Close</button>
+  </div>
+</div>
+
+
+<div class="modal" id="modal-add-question">
+  <div class="modal-card modal-card--wide">
+    <h3>＋ Add Question — <span id="add-question-quiz-title">Quiz</span></h3>
+
+    <div class="card">
+      <h3 class="card-title">Paste JSON</h3>
+      <textarea id="add-question-json" rows="18" placeholder='[
+  {
+    "question": "What is 15% of 200?",
+    "options": ["20", "25", "30", "35"],
+    "correctIndex": 2,
+    "explanation": "15% of 200 = (15/100) × 200 = 30"
+  }
+]'></textarea>
+      <p class="hint">Expected format: array of objects with <code>question</code>, <code>options[]</code>, <code>correctIndex</code> (0-based), <code>explanation</code>. <code>id</code> is optional — auto-assigned if missing.</p>
+      <div class="import-status" id="add-question-status"></div>
+    </div>
+
+    <label>Insert at position <span class="hint-inline">(blank = append at end)</span>
+      <input type="number" id="add-question-position" min="1" placeholder="e.g. 3 (1-based)">
+    </label>
+
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="btn-cancel-add-question">Cancel</button>
+      <button class="btn btn--primary" id="btn-import-add-question">⇪ Import</button>
+    </div>
   </div>
 </div>
 
