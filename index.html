@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuizMaster Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script>
+  // Apply saved theme immediately, before first paint, to avoid a light/dark flash on refresh.
+  (function() {
+    try {
+      var t = localStorage.getItem('qm-theme');
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+
+<!-- ================= AUTH SCREEN ================= -->
+<section id="view-auth" class="view view--auth active">
+  <div class="auth-card">
+    <div class="brand">
+      <span class="brand-mark">QM</span>
+      <h1>QuizMaster <em>Pro</em></h1>
+    </div>
+    <p class="auth-tag">Practice. Track. Improve.</p>
+
+    <div class="auth-tabs">
+      <button class="tab-btn active" data-tab="login">Log In</button>
+      <button class="tab-btn" data-tab="signup">Sign Up</button>
+    </div>
+
+    <form id="form-login" class="auth-form active">
+      <label>Email
+        <input type="email" name="email" placeholder="you@example.com" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" placeholder="••••••••" required>
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Log In</button>
+      <p class="auth-alt">New here? <a href="#" data-switch="signup">Create an account</a></p>
+    </form>
+
+    <form id="form-signup" class="auth-form">
+      <label>Display Name
+        <input type="text" name="name" placeholder="Rohit Kumar" required>
+      </label>
+      <label>Email
+        <input type="email" name="email" placeholder="you@example.com" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" placeholder="Minimum 6 characters" required>
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Create Account</button>
+      <p class="auth-alt">Already have an account? <a href="#" data-switch="login">Log in</a></p>
+    </form>
+  </div>
+</section>
+
+<!-- ================= APP SHELL ================= -->
+<div id="app-shell" class="app-shell" style="display:none;">
+  <!-- Mobile top bar with hamburger -->
+  <div class="mobile-topbar">
+    <button class="hamburger" id="btn-hamburger" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="mobile-brand">
+      <span class="brand-mark brand-mark--sm">QM</span>
+      <span class="mobile-brand-name">QuizMaster <em>Pro</em></span>
+    </div>
+    <button class="icon-btn theme-toggle" id="btn-theme-mobile" title="Toggle dark mode">🌙</button>
+  </div>
+
+  <!-- Sidebar overlay backdrop -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <span class="brand-mark">QM</span>
+      <h1 class="sidebar-title">QuizMaster <em>Pro</em></h1>
+      <button class="sidebar-close" id="btn-sidebar-close" aria-label="Close menu">✕</button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#dashboard" class="nav-link active" data-view="dashboard">
+        <span class="nav-icon">▦</span> Folders
+      </a>
+      <a href="#create" class="nav-link" data-view="create">
+        <span class="nav-icon">＋</span> Add Quiz
+      </a>
+      <a href="#flashcards" class="nav-link" data-view="flashcards">
+        <span class="nav-icon">▢</span> Flashcards
+      </a>
+      <a href="#history" class="nav-link" data-view="history">
+        <span class="nav-icon">▤</span> History
+      </a>
+      <a href="#friends" class="nav-link" data-view="friends">
+        <span class="nav-icon">👥</span> Friends
+        <span class="nav-badge" id="friend-req-badge" style="display:none">—</span>
+      </a>
+      <a href="#inbox" class="nav-link" data-view="inbox">
+        <span class="nav-icon">📬</span> Inbox
+        <span class="nav-badge" id="inbox-badge" style="display:none">0</span>
+      </a>
+      <a href="#notes" class="nav-link" data-view="notes">
+        <span class="nav-icon">📝</span> Daily Notes
+        <span class="nav-badge" id="notes-badge" style="display:none">!</span>
+      </a>
+      <a href="#bookmarks" class="nav-link" data-view="bookmarks">
+        <span class="nav-icon">🔖</span> Bookmarks
+      </a>
+      <a href="#backup" class="nav-link" data-view="backup">
+        <span class="nav-icon">💾</span> Backup
+      </a>
+      <a href="#profile" class="nav-link" data-view="profile">
+        <span class="nav-icon">👤</span> My Profile
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-badge" id="user-badge-link" data-view="profile" style="cursor:pointer">
+        <div class="user-rollno">
+          <span class="rollno-label">Roll No.</span>
+          <span class="rollno-value" id="user-rollno">QM-0000</span>
+        </div>
+        <div class="user-name" id="user-name">Guest User</div>
+      </div>
+      <div class="sidebar-util-row">
+        <button class="btn btn--ghost btn--small theme-toggle" id="btn-theme" title="Toggle dark/light mode">🌙 Dark</button>
+        <button class="btn btn--ghost btn--small" id="btn-logout">Log Out</button>
+      </div>
+    </div>
+  </aside>
+
+  <nav class="mobile-nav">
+    <a href="#dashboard" class="nav-link active" data-view="dashboard"><span class="nav-icon">▦</span><span>Folders</span></a>
+    <a href="#create" class="nav-link" data-view="create"><span class="nav-icon">＋</span><span>Add</span></a>
+    <a href="#notes" class="nav-link" data-view="notes"><span class="nav-icon">📝</span><span>Notes</span></a>
+    <a href="#inbox" class="nav-link" data-view="inbox"><span class="nav-icon">📬</span><span>Inbox</span><span class="mobile-nav-badge" style="display:none">0</span></a>
+    <a href="#friends" class="nav-link" data-view="friends"><span class="nav-icon">👥</span><span>Friends</span><span class="mobile-nav-badge" id="friend-req-badge-mobile" style="display:none">0</span></a>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- ===== GLOBAL SEARCH ===== -->
+    <div class="global-search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="global-search-input" placeholder="Search users, folders, or quizzes…">
+      <div class="global-search-results" id="global-search-results">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- ===== DASHBOARD (Folders) ===== -->
+    <section id="view-dashboard" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Workspace</span>
+          <h2>Your Folders</h2>
+        </div>
+        <button class="btn btn--primary" id="btn-new-folder">＋ New Folder</button>
+      </header>
+
+      <!-- PINNED QUICK ACCESS STRIP -->
+      <div class="pinned-strip-wrap" id="pinned-strip-wrap">
+        <div class="pinned-strip-header">
+          <span class="pinned-strip-label">📌 Pinned</span>
+          <span class="pinned-strip-hint">Scroll →</span>
+        </div>
+        <div class="pinned-strip" id="pinned-strip">
+          <!-- Empty state (shown when no pins) -->
+          <div class="pin-strip-empty" id="pin-strip-empty" style="display:none">
+            <span>No pins yet — click 📌 on any folder or quiz to pin it here</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- All folders grid -->
+      <div class="folder-grid" id="folder-grid">
+        <article class="folder-card folder-card--add" id="btn-add-folder-card">
+          <span class="folder-icon">＋</span>
+          <span>Create folder</span>
+        </article>
+      </div>
+    </section>
+
+    <!-- ===== FOLDER CONTENTS (quizzes inside a folder) ===== -->
+    <section id="view-folder" class="view">
+      <header class="view-header">
+        <div>
+          <button class="btn-back" data-back="dashboard">← Folders</button>
+          <span class="eyebrow">Folder</span>
+          <h2 id="folder-title">SSC CGL — Tier 1</h2>
+        </div>
+        <div class="folder-header-actions">
+          <button class="btn btn--ghost btn--small" id="btn-share-chapter">📤 Share Chapter</button>
+          <button class="btn btn--primary" id="btn-add-quiz-here">＋ Add Quiz</button>
+        </div>
+      </header>
+
+      <div class="quiz-list" id="quiz-list">
+      </div>
+    </section>
+
+    <!-- ===== CREATE / IMPORT QUIZ ===== -->
+    <section id="view-create" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Add Content</span>
+          <h2>Create or Import Quiz</h2>
+        </div>
+      </header>
+
+      <div class="create-grid">
+
+        <div class="card">
+          <h3 class="card-title">1. Choose Folder</h3>
+          <label>Save to folder
+            <select id="select-target-folder">
+              <option value="__new">＋ Create new folder…</option>
+            </select>
+          </label>
+          <label>Quiz Title
+            <input type="text" id="input-quiz-title" placeholder="e.g. Number System Set 14">
+          </label>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">2. Add Questions (JSON)</h3>
+          <div class="import-tabs">
+            <button class="tab-btn active" data-import-tab="paste">Paste JSON</button>
+            <button class="tab-btn" data-import-tab="upload">Upload File</button>
+          </div>
+
+          <div class="import-pane active" data-import-pane="paste">
+            <textarea id="json-paste-area" rows="12" placeholder='[
+  {
+    "question": "What is 15% of 200?",
+    "options": ["20", "25", "30", "35"],
+    "correctIndex": 2,
+    "explanation": "15% of 200 = (15/100) × 200 = 30"
+  }
+]'></textarea>
+            <p class="hint">Expected format: array of objects with <code>question</code>, <code>options[]</code>, <code>correctIndex</code> (0-based), <code>explanation</code>. <code>id</code> is optional — auto-assigned if missing.</p>
+          </div>
+
+          <div class="import-pane" data-import-pane="upload">
+            <label class="file-drop" for="json-file-input">
+              <span class="file-drop-icon">⇪</span>
+              <span>Click to upload <strong>.json</strong> file</span>
+              <input type="file" id="json-file-input" accept=".json" hidden>
+            </label>
+            <p class="file-name" id="file-name-display"></p>
+          </div>
+
+          <div class="import-status" id="import-status"></div>
+        </div>
+
+        <!-- Insert at index option -->
+        <div class="card card--insert">
+          <h3 class="card-title">3. Add to Existing Quiz? <span class="optional-tag">optional</span></h3>
+          <div class="insert-row">
+            <label>Existing Quiz
+              <select id="select-existing-quiz">
+                <option value="">— Create as new quiz —</option>
+              </select>
+            </label>
+            <label>Insert at position
+              <div class="insert-pos-row">
+                <input type="number" id="insert-index" min="1" placeholder="e.g. 11" style="width:90px">
+                <span class="hint-inline">Leave blank = append at end</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="create-actions">
+          <button class="btn btn--ghost" id="btn-preview-json">Preview Questions</button>
+          <button class="btn btn--primary" id="btn-save-quiz">Save Quiz to Folder</button>
+        </div>
+
+        <!-- AI Prompt Generator -->
+        <div class="ai-prompt-box">
+          <div class="ai-prompt-head">
+            <span class="ai-prompt-icon">✨</span>
+            <div>
+              <strong>Generate Questions with AI</strong>
+              <p>Copy this prompt → paste in Claude / ChatGPT → paste JSON above</p>
+            </div>
+            <button class="btn btn--ghost btn--small" id="btn-copy-prompt">Copy Prompt</button>
+          </div>
+          <pre class="ai-prompt-text" id="ai-prompt-text">Generate 20 multiple-choice questions on the topic: [YOUR TOPIC].
+
+Format as a JSON array only (no extra text):
+[
+  {
+    "question": "...",
+    "options": ["A", "B", "C", "D"],
+    "correctIndex": 0,
+    "explanation": "..."
+  }
+]
+
+Rules:
+- correctIndex is 0-based (A=0, B=1, C=2, D=3)
+- Include a brief explanation for each answer
+- SSC CGL difficulty level</pre>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== QUIZ START WINDOW (settings before starting) ===== -->
+    <section id="view-quiz-setup" class="view">
+      <div class="setup-card">
+        <header class="view-header view-header--tight">
+          <div>
+            <button class="btn-back" data-back="folder">← Back</button>
+            <span class="eyebrow">Quiz Setup</span>
+            <h2 id="setup-quiz-title">—</h2>
+            <p class="setup-subtitle"><span id="setup-quiz-total">25</span> questions total</p>
+            <p class="setup-challenge-note" id="setup-challenge-note" style="display:none">
+              ⚡ Challenge from <strong id="setup-challenge-from">Aakash Kumar</strong> — they scored <strong id="setup-challenge-score">88%</strong>. Beat it!
+            </p>
+          </div>
+        </header>
+
+        <div class="setup-grid">
+
+          <div class="setup-block" id="question-selection-block">
+            <label>Question Selection</label>
+            <div class="seg-control">
+              <button class="seg-btn active" data-select-mode="range">▤ By Range</button>
+              <button class="seg-btn" data-select-mode="random">🎲 Random Pick</button>
+            </div>
+
+            <div class="select-mode-pane active" data-select-pane="range">
+              <div class="range-row">
+                <div class="range-field">
+                  <span>From</span>
+                  <input type="number" id="range-from" min="1" value="1">
+                </div>
+                <span class="range-sep">—</span>
+                <div class="range-field">
+                  <span>To</span>
+                  <input type="number" id="range-to" min="1" value="25">
+                </div>
+                <span class="range-count-badge"><strong id="range-count">25</strong> Qs</span>
+              </div>
+              <div class="preset-row">
+                <button class="preset-btn" data-preset="all">All</button>
+                <button class="preset-btn" data-preset="first10">First 10</button>
+                <button class="preset-btn" data-preset="last10">Last 10</button>
+                <button class="preset-btn" data-preset="random10">Random 10</button>
+              </div>
+            </div>
+
+            <div class="select-mode-pane" data-select-pane="random">
+              <label class="sublabel">Number of random questions
+                <input type="number" id="random-count" min="1" value="10">
+              </label>
+            </div>
+          </div>
+
+          <div class="setup-block setup-block--toggles">
+            <label>Order</label>
+            <label class="toggle-row">
+              <span>Shuffle Questions</span>
+              <span class="switch"><input type="checkbox" id="toggle-shuffle-q"><span class="switch-slider"></span></span>
+            </label>
+            <label class="toggle-row">
+              <span>Shuffle Options <small>(breaks muscle memory)</small></span>
+              <span class="switch"><input type="checkbox" id="toggle-shuffle-opt"><span class="switch-slider"></span></span>
+            </label>
+          </div>
+
+          <div class="setup-block" id="timer-setup-block">
+            <label>Timer</label>
+            <div class="seg-control">
+              <button class="seg-btn active" data-timer-mode="none">No Timer</button>
+              <button class="seg-btn" data-timer-mode="total">Total Time</button>
+            </div>
+
+            <p class="timer-help" data-timer-help="none">No time limit — answer at your own pace.</p>
+
+            <div class="timer-input-row" data-timer-pane="total" hidden>
+              <input type="number" id="timer-minutes" min="0" value="20">
+              <span>min</span>
+              <input type="number" id="timer-seconds" min="0" max="59" value="0">
+              <span>sec total</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="setup-footer">
+          <button class="btn btn--ghost" data-back="folder">Cancel</button>
+          <button class="btn btn--primary btn--large" id="btn-begin-quiz">▶ Start Quiz</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== QUIZ PLAYER ===== -->
+    <section id="view-quiz-player" class="view">
+      <div class="player-wrap">
+
+        <header class="player-header">
+          <div class="player-progress">
+            <span id="player-q-current">1</span> / <span id="player-q-total">25</span>
+          </div>
+          <button class="btn btn--ghost btn--small" id="btn-open-navigator">▦ Questions</button>
+          <div class="player-timer" id="player-timer">
+            <span class="timer-icon">⏱</span> <span id="timer-display">20:00</span>
+          </div>
+          <button class="btn btn--ghost btn--small" id="btn-end-quiz">End Quiz</button>
+        </header>
+
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width: 4%;"></div>
+        </div>
+
+        <article class="question-card">
+          <div class="question-card-head">
+            <div class="question-tag" id="question-tag">Question 1</div>
+            <div class="question-actions">
+              <button class="btn btn--ghost btn--small icon-btn--review" id="btn-q-review" title="Mark this question for review">🚩 Mark for Review</button>
+              <button class="icon-btn" id="btn-q-search" title="Search this question online">🔍</button>
+              <button class="icon-btn" id="btn-q-bookmark" title="Bookmark this question">🔖</button>
+              <button class="icon-btn" id="btn-q-edit" title="Edit this question">✎</button>
+              <button class="icon-btn icon-btn--danger" id="btn-q-delete" title="Delete this question">🗑</button>
+            </div>
+          </div>
+          <h3 class="question-text" id="question-text">What is 15% of 200?</h3>
+
+          <div class="options-list" id="options-list">
+            <label class="option-item">
+              <input type="radio" name="q-option">
+              <span class="option-marker">A</span>
+              <span class="option-text">20</span>
+            </label>
+            <label class="option-item">
+              <input type="radio" name="q-option">
+              <span class="option-marker">B</span>
+              <span class="option-text">25</span>
+            </label>
+            <label class="option-item">
+              <input type="radio" name="q-option">
+              <span class="option-marker">C</span>
+              <span class="option-text">30</span>
+            </label>
+            <label class="option-item">
+              <input type="radio" name="q-option">
+              <span class="option-marker">D</span>
+              <span class="option-text">35</span>
+            </label>
+          </div>
+        </article>
+
+        <footer class="player-footer">
+          <button class="btn btn--ghost" id="btn-prev-q">← Previous</button>
+          <div class="player-jump" id="player-jump"></div>
+          <button class="btn btn--primary" id="btn-next-q">Next →</button>
+        </footer>
+      </div>
+    </section>
+
+    <!-- ===== RESULT / OVERVIEW ===== -->
+    <section id="view-result" class="view">
+      <div class="result-wrap">
+        <header class="result-head">
+          <span class="eyebrow">Quiz Complete</span>
+          <h2 id="result-quiz-title">—</h2>
+        </header>
+
+        <div class="result-summary">
+          <div class="score-ring">
+            <span class="score-value" id="score-percent">—</span>
+            <span class="score-label">Score</span>
+          </div>
+
+          <div class="result-stats">
+            <div class="stat-item stat-item--correct">
+              <span class="stat-num" id="stat-correct">—</span>
+              <span class="stat-label">Correct</span>
+            </div>
+            <div class="stat-item stat-item--incorrect">
+              <span class="stat-num" id="stat-incorrect">—</span>
+              <span class="stat-label">Incorrect</span>
+            </div>
+            <div class="stat-item stat-item--skipped">
+              <span class="stat-num" id="stat-skipped">—</span>
+              <span class="stat-label">Skipped</span>
+            </div>
+            <div class="stat-item stat-item--time">
+              <span class="stat-num" id="stat-time">—</span>
+              <span class="stat-label">Time Taken</span>
+            </div>
+            <div class="stat-item stat-item--rank">
+              <span class="stat-num" id="stat-rank">—</span>
+              <span class="stat-label">Your Rank</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="result-review" id="result-review">
+          <h3>Review Answers</h3>
+          <div class="review-list" id="review-list">
+          </div>
+        </div>
+
+        <div class="result-actions">
+          <button class="btn btn--ghost btn-leaderboard" id="btn-result-leaderboard" style="display:none">🏆 Leaderboard</button>
+          <button class="btn btn--ghost" id="btn-result-flashcards">Review as Flashcards</button>
+          <button class="btn btn--primary" id="btn-result-done">Back to Folder</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== FLASHCARDS (grid view) ===== -->
+    <section id="view-flashcards" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Revise</span>
+          <h2>Flashcards</h2>
+          <p class="setup-subtitle"><span id="flash-set-name"></span> — <span id="flash-total-count">0</span> questions</p>
+        </div>
+        <div class="flash-toolbar">
+          <button class="btn btn--ghost btn--small" id="btn-flash-shuffle">⤮ Shuffle</button>
+          <button class="btn btn--ghost btn--small" id="btn-flash-flip-all">⇄ Flip All</button>
+        </div>
+      </header>
+
+      <div class="bookmark-filter-bar" id="flash-filter-bar">
+        <button class="btn btn--small bookmark-filter-chip active" data-flash-filter="all">All</button>
+        <button class="btn btn--small bookmark-filter-chip" data-flash-filter="bookmarked">🔖 Bookmarked</button>
+      </div>
+
+      <div class="flash-grid" id="flash-grid">
+
+      </div>
+    </section>
+
+    <!-- ===== HISTORY ===== -->
+    <section id="view-history" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Performance</span>
+          <h2>Quiz History</h2>
+        </div>
+      </header>
+
+      <h3 class="section-subhead">Shared Quizzes</h3>
+      <div class="history-list" id="shared-sessions-list">
+      </div>
+      <p class="hint" id="shared-sessions-empty" style="display:none">No shared quizzes yet. Share a quiz with friends to see it here.</p>
+
+      <h3 class="section-subhead">Past Attempts</h3>
+      <div class="history-list" id="history-list">
+      </div>
+      <p class="hint" id="history-empty" style="display:none">No quiz attempts yet. Take a quiz to see your history here.</p>
+    </section>
+
+    <!-- ===== FRIENDS ===== -->
+    <section id="view-friends" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Study Together</span>
+          <h2>Friends</h2>
+        </div>
+        <button class="btn btn--primary" id="btn-add-friend">＋ Add Friend</button>
+      </header>
+
+      <!-- Search bar (Facebook-style) -->
+      <div class="friend-search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="friend-search-input" placeholder="Search by username or email…">
+        <div class="friend-search-results" id="friend-search-results">
+          <!-- Dropdown results appear here -->
+        </div>
+      </div>
+
+      <!-- Friend Requests -->
+      <div class="friends-section" id="friend-requests-section" style="display:none">
+        <h3 class="section-label">Pending Requests <span class="count-chip" id="friend-req-count">0</span></h3>
+        <div class="friend-list" id="friend-requests-list">
+        </div>
+      </div>
+
+      <!-- Friend Groups -->
+      <div class="friends-section">
+        <div class="section-header-row">
+          <h3 class="section-label">Study Groups</h3>
+          <button class="btn btn--ghost btn--small" id="btn-new-group">＋ New Group</button>
+        </div>
+        <div class="groups-grid" id="groups-grid">
+          <article class="group-card group-card--add">
+            <span>＋</span>
+            <span>Create group</span>
+          </article>
+        </div>
+      </div>
+
+      <!-- My Friends list -->
+      <div class="friends-section">
+        <h3 class="section-label">My Friends <span class="count-chip" id="friends-count">0</span></h3>
+        <div class="friend-list" id="friends-list">
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== BACKUP / EXPORT ===== -->
+    <section id="view-backup" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Data Management</span>
+          <h2>Backup &amp; Restore</h2>
+        </div>
+      </header>
+
+      <div class="backup-grid">
+
+        <div class="card">
+          <h3 class="card-title">📦 Export Full Backup</h3>
+          <p class="card-desc">Downloads a complete JSON file of all your folders, quizzes, questions, and history.</p>
+          <div class="backup-actions">
+            <button class="btn btn--primary" id="btn-export-all">⇩ Export All Data</button>
+            <button class="btn btn--ghost" id="btn-export-quiz">Export Single Quiz…</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">📥 Import / Restore</h3>
+          <p class="card-desc">Paste a backup JSON or upload a <code>.json</code> file to restore your data.</p>
+          <div class="import-tabs">
+            <button class="tab-btn active" data-backup-tab="paste-restore">Paste JSON</button>
+            <button class="tab-btn" data-backup-tab="upload-restore">Upload File</button>
+          </div>
+          <div class="import-pane active" data-backup-pane="paste-restore">
+            <textarea id="restore-paste-area" rows="8" placeholder='{"folders": [...], "quizzes": [...], "history": [...]}'></textarea>
+          </div>
+          <div class="import-pane" data-backup-pane="upload-restore">
+            <label class="file-drop" for="restore-file-input">
+              <span class="file-drop-icon">⇪</span>
+              <span>Click to upload <strong>.json</strong> backup file</span>
+              <input type="file" id="restore-file-input" accept=".json" hidden>
+            </label>
+          </div>
+          <div class="backup-restore-actions">
+            <button class="btn btn--ghost" id="btn-preview-restore">Preview</button>
+            <button class="btn btn--primary" id="btn-do-restore">Restore Data</button>
+          </div>
+          <p class="hint" style="margin-top:0.75rem">⚠️ Restoring will merge data. Existing quizzes with same ID will be overwritten.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== PROFILE ===== -->
+    <section id="view-profile" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Account</span>
+          <h2>My Profile</h2>
+        </div>
+      </header>
+
+      <div class="profile-card">
+        <div class="profile-top">
+          <div class="profile-avatar" id="profile-avatar"></div>
+          <div class="profile-info">
+            <h3 id="profile-display-name"></h3>
+            <span class="rollno-value" id="profile-rollno"></span>
+            <p class="profile-joined" id="profile-joined"></p>
+          </div>
+          <div class="profile-visibility">
+            <label class="toggle-row toggle-row--card">
+              <span>
+                <strong id="profile-visibility-label">Public Profile</strong>
+                <small id="profile-visibility-desc">Friends can see your activity &amp; stats</small>
+              </span>
+              <span class="switch"><input type="checkbox" id="toggle-profile-public" checked><span class="switch-slider"></span></span>
+            </label>
+            <p class="hint" id="profile-private-hint" style="display:none;margin-top:.5rem">Your profile is private — others can't find you in search. Toggle visibility to allow friend requests.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-stats-grid">
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">📝</span>
+          <span class="profile-stat-value" id="stat-quizzes-today">0</span>
+          <span class="profile-stat-label">Quizzes Today</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">🔥</span>
+          <span class="profile-stat-value" id="stat-streak">0</span>
+          <span class="profile-stat-label">Day Streak</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">⏱</span>
+          <span class="profile-stat-value" id="stat-quiz-time-week">0m</span>
+          <span class="profile-stat-label">Quiz Time (7d)</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">▢</span>
+          <span class="profile-stat-value" id="stat-flash-time-week">0m</span>
+          <span class="profile-stat-label">Flashcard Time (7d)</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">🎯</span>
+          <span class="profile-stat-value" id="stat-avg-accuracy">0%</span>
+          <span class="profile-stat-label">Avg. Accuracy</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">📚</span>
+          <span class="profile-stat-value" id="stat-total-quizzes">0</span>
+          <span class="profile-stat-label">Quizzes Attempted</span>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h3 class="section-label">Activity Calendar</h3>
+        <div class="contribution-calendar-wrap">
+          <div class="contribution-months" id="contribution-months"></div>
+          <div class="contribution-body">
+            <div class="contribution-day-labels">
+              <span>Mon</span><span>Wed</span><span>Fri</span>
+            </div>
+            <div class="contribution-grid" id="contribution-grid"></div>
+          </div>
+        </div>
+        <div class="contribution-legend">
+          <span class="contribution-legend-label">Less</span>
+          <span class="contribution-cell" data-level="0"></span>
+          <span class="contribution-cell" data-level="1"></span>
+          <span class="contribution-cell" data-level="2"></span>
+          <span class="contribution-cell" data-level="3"></span>
+          <span class="contribution-cell" data-level="4"></span>
+          <span class="contribution-legend-label">More</span>
+          <span class="contribution-legend-target">
+            <span class="contribution-cell contribution-cell--target"></span> Daily target met (3+ quizzes)
+          </span>
+        </div>
+        <p class="hint">Each box = one day. Greener = more quizzes attempted that day.</p>
+      </div>
+
+      <div class="profile-section" id="public-library-section">
+        <h3 class="section-label">📤 My Public Library <span class="hint" style="font-weight:400">— anyone can view, like &amp; import these</span></h3>
+        <div class="public-library-grid" id="public-library-grid">
+          <!-- populated by JS based on items marked Public -->
+        </div>
+        <p class="public-library-empty" id="public-library-empty">
+          Nothing shared yet. Open a folder or quiz and tap <strong>🌐 Make Public</strong> to add it here.
+        </p>
+      </div>
+
+      <p class="hint" id="profile-private-note" style="display:none">
+        🔒 Your profile is private — only you can see this activity. Friends will not see your stats or appear on the leaderboard.
+      </p>
+    </section>
+    <section id="view-inbox" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">From Friends</span>
+          <h2>Inbox</h2>
+        </div>
+        <div class="inbox-filter-row">
+          <button class="seg-btn active" data-inbox-filter="all">All</button>
+          <button class="seg-btn" data-inbox-filter="quiz">Quizzes</button>
+          <button class="seg-btn" data-inbox-filter="chapter">Chapters</button>
+          <button class="seg-btn" data-inbox-filter="challenge">Challenges</button>
+        </div>
+      </header>
+
+      <div class="inbox-list" id="inbox-list">
+
+        <!-- Empty state (hidden by default) -->
+        <div class="inbox-empty" id="inbox-empty" style="display:none">
+          <span class="inbox-empty-icon">📭</span>
+          <h3>All caught up!</h3>
+          <p>No new quizzes or challenges from friends yet.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== BOOKMARKS ===== -->
+    <section id="view-bookmarks" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Saved Questions</span>
+          <h2>Bookmarks</h2>
+        </div>
+        <div class="flash-toolbar">
+          <button class="btn btn--ghost btn--small" id="btn-bookmark-quiz">↺ Show All</button>
+          <button class="btn btn--ghost btn--small" id="btn-bookmark-flash">⇄ Flip All</button>
+        </div>
+      </header>
+      <div class="bookmark-filter-bar" id="bookmark-filter-bar"></div>
+      <div class="flash-grid" id="bookmark-grid">
+      </div>
+      <p class="hint" id="bookmarks-empty" style="display:none">No bookmarks yet — tap 🔖 on any question to save it here.</p>
+    </section>
+
+    <!-- ===== DAILY NOTES ===== -->
+    <section id="view-notes" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Daily Revision</span>
+          <h2>Daily Notes</h2>
+        </div>
+        <button class="btn btn--primary" id="btn-new-note">＋ New Note</button>
+      </header>
+
+      <!-- Today's note composer -->
+      <div class="note-composer" id="note-composer">
+        <div class="note-composer-head">
+          <span class="note-date-label" id="note-composer-date">Today · <span id="note-today-date"></span></span>
+          <div class="note-tag-row" id="note-tag-row">
+            <!-- tags appear here -->
+          </div>
+        </div>
+        <textarea class="note-textarea" id="note-textarea" placeholder="Aaj ka revision note likho… shortcut, formula, ya koi important point joh yaad rakhna ho…" rows="5"></textarea>
+        <div class="note-composer-footer">
+          <div class="note-attach-row">
+            <span class="note-attach-label">Tag to:</span>
+            <button class="btn btn--ghost btn--small" id="btn-tag-folder">📁 Folder</button>
+            <button class="btn btn--ghost btn--small" id="btn-tag-quiz">📝 Quiz</button>
+          </div>
+          <button class="btn btn--primary btn--small" id="btn-save-note">Save Note</button>
+        </div>
+      </div>
+
+      <!-- Tag picker (hidden by default, shown when tagging) -->
+      <div class="note-tag-picker" id="note-tag-picker" style="display:none">
+        <div class="note-tag-picker-head">
+          <span id="note-tag-picker-label">Select a Folder to tag</span>
+          <button class="btn-icon-close" id="btn-close-tag-picker">✕</button>
+        </div>
+        <div class="note-tag-picker-list" id="note-tag-picker-list">
+        </div>
+      </div>
+
+      <!-- Notes list -->
+      <div class="notes-list" id="notes-list">
+
+        <!-- Empty state (hidden) -->
+        <div class="notes-empty" id="notes-empty" style="display:none">
+          <span class="notes-empty-icon">📝</span>
+          <p>Koi note nahi abhi tak</p>
+          <p class="hint">Roz ek note likho — revision fast hogi!</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===== SHARE MODAL (enhanced) ===== -->
+<div class="modal" id="modal-share">
+  <div class="modal-card modal-card--wide">
+    <h3>Share Quiz</h3>
+    <p class="setup-subtitle" id="share-quiz-total-note"><span id="share-quiz-total">25</span> questions total in this quiz</p>
+
+    <!-- Question selection (same set sent to everyone) -->
+    <div class="setup-block">
+      <label>Send Which Questions?</label>
+      <div class="seg-control" id="share-select-mode">
+        <button class="seg-btn active" data-share-select-mode="all">📘 Full Quiz</button>
+        <button class="seg-btn" data-share-select-mode="range">▤ By Range</button>
+        <button class="seg-btn" data-share-select-mode="random">🎲 Random Pick</button>
+      </div>
+
+      <div class="select-mode-pane active" data-share-select-pane="all">
+        <p class="hint">Friend gets all <span id="share-all-count">25</span> questions.</p>
+      </div>
+
+      <div class="select-mode-pane" data-share-select-pane="range">
+        <div class="range-row">
+          <div class="range-field">
+            <span>From</span>
+            <input type="number" id="share-range-from" min="1" value="1">
+          </div>
+          <span class="range-sep">—</span>
+          <div class="range-field">
+            <span>To</span>
+            <input type="number" id="share-range-to" min="1" value="30">
+          </div>
+          <span class="range-count-badge"><strong id="share-range-count">30</strong> Qs</span>
+        </div>
+        <p class="hint">e.g. Questions 1–30, or 31–60 — your friend gets exactly this same set.</p>
+      </div>
+
+      <div class="select-mode-pane" data-share-select-pane="random">
+        <label class="sublabel">Number of random questions
+          <input type="number" id="share-random-count" min="1" value="30">
+        </label>
+        <p class="hint">A random set is picked once and sent as a fixed quiz — both of you get the identical set of questions.</p>
+      </div>
+    </div>
+
+    <!-- Time limit (same for everyone) -->
+    <div class="setup-block">
+      <label>Time Limit (same for everyone)</label>
+      <div class="seg-control" id="share-timer-mode">
+        <button class="seg-btn active" data-share-timer-mode="none">No Timer</button>
+        <button class="seg-btn" data-share-timer-mode="total">Total Time</button>
+      </div>
+      <p class="timer-help" data-share-timer-help="none">Everyone can answer at their own pace.</p>
+      <div class="timer-input-row" data-share-timer-pane="total" hidden>
+        <input type="number" id="share-timer-minutes" min="0" value="20">
+        <span>min</span>
+        <input type="number" id="share-timer-seconds" min="0" max="59" value="0">
+        <span>sec total</span>
+      </div>
+    </div>
+
+    <div class="share-tabs">
+      <button class="tab-btn active" data-share-tab="link">🔗 Via Link</button>
+      <button class="tab-btn" data-share-tab="friend">👥 To Friends</button>
+      <button class="tab-btn" data-share-tab="group" style="display:none">📚 To Group</button>
+    </div>
+
+    <!-- Link tab -->
+    <div class="share-pane active" data-share-pane="link">
+      <p>Anyone with this link can attempt this quiz.</p>
+      <div class="share-link-row">
+        <input type="text" id="share-link-input" readonly value="https://quizmaster.pro/q/abc123">
+        <button class="btn btn--primary btn--small" id="btn-copy-link">Copy</button>
+      </div>
+      <label class="share-option-row">
+        <input type="checkbox" id="share-store-result">
+        <span>Store attemptee's name, score &amp; rank (visible to you)</span>
+      </label>
+    </div>
+
+    <!-- Friend tab -->
+    <div class="share-pane" data-share-pane="friend">
+      <p>Quiz will appear in their inbox to attempt directly.</p>
+      <label class="share-option-row">
+        <input type="checkbox" id="share-as-challenge-friend">
+        <span>⚡ Send as Challenge (include your score so they can try to beat it)</span>
+      </label>
+      <div class="friend-pick-list" id="share-friend-pick-list">
+      </div>
+      <p class="hint" id="share-friend-empty" style="display:none">Add friends first from the Friends page to share quizzes with them.</p>
+      <button class="btn btn--primary btn--block" id="btn-send-shared-quiz" style="margin-top:1rem">Send to Selected</button>
+    </div>
+
+    <!-- Group tab -->
+    <div class="share-pane" data-share-pane="group" style="display:none">
+      <p>Share with an entire study group at once.</p>
+      <label class="share-option-row">
+        <input type="checkbox" id="share-as-challenge-group">
+        <span>⚡ Send as Challenge (include your score so they can try to beat it)</span>
+      </label>
+      <div class="friend-pick-list">
+        <label class="friend-pick-item">
+          <input type="checkbox" checked>
+          <div class="group-icon-sm">📚</div>
+          <span>SSC CGL Batch 2025 (4 members)</span>
+        </label>
+      </div>
+      <button class="btn btn--primary btn--block" style="margin-top:1rem">Share to Group</button>
+    </div>
+
+    <button class="btn btn--ghost btn--block" id="btn-close-share" style="margin-top:0.75rem">Close</button>
+  </div>
+</div>
+
+<!-- ===== LEADERBOARD MODAL ===== -->
+<div class="modal" id="modal-leaderboard">
+  <div class="modal-card modal-card--wide">
+    <h3>🏆 Leaderboard</h3>
+    <p id="leaderboard-quiz-name">Number System &amp; Simplification</p>
+    <div class="leaderboard-list" id="leaderboard-list">
+    </div>
+    <button class="btn btn--ghost btn--block" id="btn-close-leaderboard" style="margin-top:1.25rem">Close</button>
+  </div>
+</div>
+
+<!-- ===== NEW FOLDER MODAL ===== -->
+<div class="modal" id="modal-folder">
+  <div class="modal-card">
+    <h3>New Folder</h3>
+    <label>Folder Name
+      <input type="text" id="new-folder-name" placeholder="e.g. SSC CHSL — Tier 2">
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="btn-cancel-folder">Cancel</button>
+      <button class="btn btn--primary" id="btn-create-folder">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== NEW GROUP MODAL ===== -->
+<div class="modal" id="modal-group">
+  <div class="modal-card">
+    <h3>Create Study Group</h3>
+    <label>Group Name
+      <input type="text" id="new-group-name" placeholder="e.g. SSC CGL Batch 2025">
+    </label>
+    <label>Add Members
+      <div class="friend-pick-list friend-pick-list--compact">
+        <label class="friend-pick-item">
+          <input type="checkbox">
+          <div class="friend-avatar friend-avatar--sm">AK</div>
+          <span>Aakash Kumar</span>
+        </label>
+        <label class="friend-pick-item">
+          <input type="checkbox">
+          <div class="friend-avatar friend-avatar--sm">RS</div>
+          <span>Rahul Sharma</span>
+        </label>
+        <label class="friend-pick-item">
+          <input type="checkbox">
+          <div class="friend-avatar friend-avatar--sm">NP</div>
+          <span>Neha Pandey</span>
+        </label>
+      </div>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="btn-cancel-group">Cancel</button>
+      <button class="btn btn--primary" id="btn-create-group">Create Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SAVE TO FOLDER MODAL (for received quizzes/chapters) ===== -->
+<div class="modal" id="modal-save-to-folder">
+  <div class="modal-card">
+    <h3 id="save-modal-title">Save to My Library</h3>
+    <p id="save-modal-desc">Choose where to save this item in your library.</p>
+
+    <div class="save-folder-options">
+      <label class="save-folder-option">
+        <input type="radio" name="save-folder" value="existing" checked>
+        <span>Add to existing folder</span>
+      </label>
+      <select id="save-folder-select" style="margin-left:1.5rem; margin-bottom:0.75rem">
+        <option>SSC CGL — Tier 1</option>
+        <option>SSC CHSL</option>
+      </select>
+
+      <label class="save-folder-option">
+        <input type="radio" name="save-folder" value="new">
+        <span>Create new folder</span>
+      </label>
+      <input type="text" id="save-new-folder-name" placeholder="e.g. Reasoning — Neha's Notes" style="margin-left:1.5rem; display:none">
+    </div>
+
+    <div class="modal-actions" style="margin-top:1.25rem">
+      <button class="btn btn--ghost" id="btn-cancel-save-folder">Cancel</button>
+      <button class="btn btn--primary" id="btn-confirm-save-folder">＋ Save Here</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SHARE CHAPTER MODAL (sender side) ===== -->
+<div class="modal" id="modal-share-chapter">
+  <div class="modal-card modal-card--wide">
+    <h3>📤 Share Chapter</h3>
+    <p>Your friend will receive all quizzes in this chapter and can add to their own library.</p>
+
+    <div class="shared-chapter-preview">
+      <div class="shared-chapter-icon">📁</div>
+      <div>
+        <strong id="share-chapter-name">SSC CGL — Tier 1</strong>
+        <span id="share-chapter-count">12 quizzes · 286 questions</span>
+      </div>
+    </div>
+
+    <div class="share-tabs" style="margin-top:1rem">
+      <button class="tab-btn active" data-share-chapter-tab="friends">👥 Friends</button>
+      <button class="tab-btn" data-share-chapter-tab="groups" style="display:none">📚 Groups</button>
+      <button class="tab-btn" data-share-chapter-tab="link">🔗 Link</button>
+    </div>
+
+    <div class="share-chapter-pane active" data-chapter-pane="friends">
+      <div class="friend-pick-list" id="share-chapter-friend-list" style="margin-top:0.75rem">
+      </div>
+      <p class="hint" id="share-chapter-friend-empty" style="display:none">Add friends first from the Friends page to share chapters with them.</p>
+      <button class="btn btn--primary btn--block" id="btn-send-chapter" style="margin-top:1rem">📤 Send Chapter</button>
+    </div>
+
+    <div class="share-chapter-pane" data-chapter-pane="groups" style="display:none">
+      <div class="friend-pick-list" style="margin-top:0.75rem">
+        <label class="friend-pick-item">
+          <input type="checkbox">
+          <div class="group-icon-sm">📚</div>
+          <span>SSC CGL Batch 2025 (4 members)</span>
+        </label>
+      </div>
+      <button class="btn btn--primary btn--block" style="margin-top:1rem">📤 Send to Group</button>
+    </div>
+
+    <div class="share-chapter-pane" data-chapter-pane="link">
+      <p style="margin-top:0.75rem; font-size:0.82rem; color:var(--slate)">Anyone with this link can import this full chapter into their library.</p>
+      <div class="share-link-row" style="margin-top:0.5rem">
+        <input type="text" readonly id="share-chapter-link-input" value="https://quizmaster.pro/chapter/xyz789">
+        <button class="btn btn--primary btn--small" id="btn-copy-chapter-link">Copy</button>
+      </div>
+    </div>
+
+    <button class="btn btn--ghost btn--block" id="btn-close-share-chapter" style="margin-top:0.75rem">Close</button>
+  </div>
+</div>
+
+<!-- ===== QUESTION NAVIGATOR MODAL ===== -->
+<div class="modal" id="modal-navigator">
+  <div class="modal-card modal-card--wide">
+    <h3>Question Navigator</h3>
+
+    <div class="nav-legend">
+      <span class="nav-legend-item"><span class="nav-dot nav-dot--answered"></span> Answered</span>
+      <span class="nav-legend-item"><span class="nav-dot nav-dot--review"></span> Marked for Review</span>
+      <span class="nav-legend-item"><span class="nav-dot nav-dot--unanswered"></span> Not Answered</span>
+      <span class="nav-legend-item"><span class="nav-dot nav-dot--current"></span> Current</span>
+    </div>
+
+    <div class="nav-grid" id="nav-grid">
+      <!-- buttons generated by JS -->
+    </div>
+
+    <div class="nav-summary" id="nav-summary"></div>
+
+    <button class="btn btn--ghost btn--block" id="btn-close-navigator" style="margin-top:1rem">Close</button>
+  </div>
+</div>
+
+<!-- ===== END QUIZ CONFIRM MODAL ===== -->
+<div class="modal" id="modal-end-quiz">
+  <div class="modal-card">
+    <h3>⚠️ End Quiz?</h3>
+    <p id="end-quiz-warning">You still have <strong id="end-quiz-unanswered-count">0</strong> question(s) left unanswered.</p>
+    <p class="hint">Once submitted, you won't be able to change your answers.</p>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="btn-cancel-end-quiz">Go Back &amp; Review</button>
+      <button class="btn btn--primary" id="btn-confirm-end-quiz">Submit Quiz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Supabase client (must load first) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Static UI logic (defines renderPlayer, quizState, darkMode, pins, etc.) -->
+<script src="oldstatic.js"></script>
+<!-- Supabase integration (overrides static handlers with real backend) -->
+<script src="app.js"></script>
+</body>
+</html>
