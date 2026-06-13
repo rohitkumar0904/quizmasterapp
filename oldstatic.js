@@ -711,9 +711,9 @@ profileToggle.addEventListener('change', applyProfileVisibility);
 applyProfileVisibility();
 
 // ── PROFILE: ACTIVITY CALENDAR (GitHub-style heatmap) ──────
-function buildActivityCalendar() {
-  const grid   = document.getElementById('contribution-grid');
-  const months = document.getElementById('contribution-months');
+function buildActivityCalendar(gridId, monthsId) {
+  const grid   = document.getElementById(gridId || 'contribution-grid');
+  const months = document.getElementById(monthsId || 'contribution-months');
   if (!grid) return;
   grid.innerHTML = '';
   months.innerHTML = '';
