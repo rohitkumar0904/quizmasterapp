@@ -290,12 +290,18 @@ function renderFolders() {
     // Visibility toggle
     card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
       e.stopPropagation();
-      folder.is_public = !folder.is_public;
+      const newVal = !folder.is_public;
+      const { error } = await sb.from('folders').update({ is_public: newVal }).eq('id', folder.id);
+      if (error) {
+        console.error('folder visibility update error:', error);
+        toast('Could not update visibility: ' + error.message, 'error');
+        return;
+      }
+      folder.is_public = newVal;
       const badge = card.querySelector('[data-visibility-badge]');
       badge.textContent = folder.is_public ? '🌐 Public' : '🔒 Private';
       badge.className = `visibility-badge ${folder.is_public ? 'visibility-badge--public' : ''}`;
       card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '🔒 Make Private' : '🌐 Make Public';
-      await sb.from('folders').update({ is_public: folder.is_public }).eq('id', folder.id);
       buildPublicLibrary();
     });
 
@@ -341,7 +347,7 @@ async function loadFolderCount(folderId) {
   if (el) el.textContent = (count || 0) + ' quiz' + (count === 1 ? '' : 'zes');
 }
 
-async function createFolder(name) {
+async function createFolder(name, silent) {
   if (!currentUser) return null;
   const { data, error } = await sb.from('folders').insert({
     user_id: currentUser.id,
@@ -350,7 +356,7 @@ async function createFolder(name) {
   if (error) { toast('Could not create folder: ' + error.message, 'error'); return null; }
   foldersCache.unshift(data);
   renderFolders();
-  toast('Folder created!', 'success');
+  if (!silent) toast('Folder created!', 'success');
   return data;
 }
 
@@ -445,7 +451,18 @@ function renderQuizzes() {
       toast('Quiz deleted.', 'info');
     });
 
-    // Start quiz
+    // Add Question (modal, stays in folder)
+    slip.querySelector('.btn-add-question').addEventListener('click', e => {
+      e.stopPropagation();
+      addQuestionTargetQuizId = quiz.id;
+      document.getElementById('add-question-quiz-title').textContent = quiz.title;
+      document.getElementById('add-question-json').value = '';
+      document.getElementById('add-question-position').value = '';
+      document.getElementById('add-question-status').textContent = '';
+      openModal('modal-add-question');
+    });
+
+
     slip.querySelector('.btn-start-quiz-real').addEventListener('click', () => {
       activeQuizId = quiz.id;
       activeQuizTitle = quiz.title;
@@ -477,6 +494,8 @@ function renderQuizzes() {
     slip.querySelector('.btn-share-quiz-real').addEventListener('click', () => {
       initShareSelection(qCount);
       currentShareQuizId = quiz.id;
+      const pickerBlock = document.getElementById('share-quiz-picker-block');
+      if (pickerBlock) pickerBlock.style.display = 'none';
       openModal('modal-share');
       setupShareModal(quiz);
     });
@@ -578,7 +597,181 @@ async function saveQuiz() {
   showView('folder');
 }
 
-// ── ACTIVE QUIZ STATE ─────────────────────────────────────────
+// ── FRIEND PROFILE (view their public library) ─────────────────
+document.getElementById('btn-close-friend-profile')?.addEventListener('click', () => closeModal('modal-friend-profile'));
+
+async function openFriendProfile(friend) {
+  const initials = (friend.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  document.getElementById('friend-profile-avatar').textContent = initials;
+  document.getElementById('friend-profile-name').textContent = friend.display_name || 'Friend';
+  document.getElementById('friend-profile-rollno').textContent = friend.roll_no || '';
+  openModal('modal-friend-profile');
+  await Promise.all([
+    renderFriendPublicLibrary(friend),
+    renderFriendStats(friend),
+    buildActivityCalendarReal(friend.id, 'friend-contribution-grid', 'friend-contribution-months')
+  ]);
+}
+
+async function renderFriendStats(friend) {
+  const { data: attempts } = await sb.from('quiz_attempts')
+    .select('score, total').eq('user_id', friend.id);
+
+  const totalEl = document.getElementById('friend-stat-total-quizzes');
+  const accEl   = document.getElementById('friend-stat-avg-accuracy');
+  if (!attempts || attempts.length === 0) {
+    if (totalEl) totalEl.textContent = '0';
+    if (accEl) accEl.textContent = '0%';
+    return;
+  }
+  if (totalEl) totalEl.textContent = attempts.length;
+  const avgPct = attempts.reduce((sum, a) => sum + (a.total > 0 ? (a.score / a.total) * 100 : 0), 0) / attempts.length;
+  if (accEl) accEl.textContent = Math.round(avgPct) + '%';
+}
+
+async function renderFriendPublicLibrary(friend) {
+  const grid  = document.getElementById('friend-public-library-grid');
+  const empty = document.getElementById('friend-public-library-empty');
+  if (!grid) return;
+  grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
+
+  const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
+    sb.from('folders').select('id, name, user_id').eq('user_id', friend.id).eq('is_public', true),
+    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', friend.id).eq('is_public', true)
+  ]);
+
+  // Don't show quizzes that belong to a public folder (avoid duplicate "Add")
+  const folderIds = new Set((pubFolders || []).map(f => f.id));
+  const standaloneQuizzes = (pubQuizzes || []).filter(q => !folderIds.has(q.folder_id));
+
+  const items = [
+    ...(pubFolders || []).map(f => ({ id: f.id, type: 'folder', label: '📁 Folder', title: f.name, meta: '' })),
+    ...standaloneQuizzes.map(q => ({ id: q.id, type: 'quiz', label: '📝 Quiz', title: q.title, meta: `${q.questions?.length || 0} Qs` }))
+  ];
+
+  grid.innerHTML = '';
+  if (items.length === 0) { if (empty) empty.style.display = 'block'; return; }
+  if (empty) empty.style.display = 'none';
+
+  items.forEach(item => {
+    const el = document.createElement('article');
+    el.className = 'public-lib-card';
+    el.innerHTML = `
+      <div class="public-lib-card-top">
+        <span class="public-lib-type">${item.label}</span>
+        <span class="visibility-badge visibility-badge--public">🌐 Public</span>
+      </div>
+      <h4>${escHtml(item.title)}</h4>
+      <span class="public-lib-owner">👤 ${escHtml(friend.display_name)} · ${item.meta}</span>
+      <div class="public-lib-actions">
+        <button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>
+      </div>
+    `;
+    grid.appendChild(el);
+
+    el.querySelector('.btn-import-shared-item').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      setLoading(btn, true, 'Adding…');
+      if (item.type === 'folder') {
+        await importSharedChapter(item.id, item.title);
+      } else {
+        await importSharedQuiz(item.id, item.title, friend.display_name);
+      }
+      setLoading(btn, false);
+    });
+  });
+}
+
+// Import a single shared quiz into the current user's library (own folder)
+async function importSharedQuiz(quizId, quizTitle, fromName) {
+  const { data: srcQuiz, error } = await sb.from('quizzes')
+    .select('title, questions').eq('id', quizId).single();
+  if (error || !srcQuiz) { toast('Could not load quiz: ' + (error?.message || ''), 'error'); return; }
+
+  const folderName = `Shared by ${fromName || 'Friend'}`;
+  let folder = foldersCache.find(f => f.user_id === currentUser.id && f.name === folderName);
+  if (!folder) {
+    folder = await createFolder(folderName, true /* silent */);
+    if (!folder) { toast('Could not create folder.', 'error'); return; }
+  }
+
+  const { error: insErr } = await sb.from('quizzes').insert({
+    user_id: currentUser.id,
+    folder_id: folder.id,
+    title: srcQuiz.title,
+    questions: srcQuiz.questions,
+    is_public: false
+  });
+  if (insErr) { toast('Could not add quiz: ' + insErr.message, 'error'); return; }
+
+  loadFolderCount(folder.id);
+  toast(`"${srcQuiz.title}" added to "${folder.name}"!`, 'success');
+}
+
+
+let addQuestionTargetQuizId = null;
+
+document.getElementById('btn-cancel-add-question')?.addEventListener('click', () => closeModal('modal-add-question'));
+
+document.getElementById('btn-import-add-question')?.addEventListener('click', async () => {
+  if (!addQuestionTargetQuizId) return;
+  const raw = document.getElementById('add-question-json').value.trim();
+  const statusEl = document.getElementById('add-question-status');
+  if (!raw) { statusEl.textContent = 'Paste JSON first.'; statusEl.className = 'import-status error'; return; }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('JSON must be an array.');
+    parsed.forEach((q, i) => {
+      if (!q.question || !Array.isArray(q.options) || typeof q.correctIndex !== 'number')
+        throw new Error('Question ' + (i + 1) + ' missing required fields.');
+    });
+  } catch (err) {
+    statusEl.textContent = '✗ ' + err.message;
+    statusEl.className = 'import-status error';
+    return;
+  }
+
+  const existing = quizzesCache.find(q => q.id === addQuestionTargetQuizId);
+  if (!existing) { toast('Quiz not found.', 'error'); return; }
+
+  // Assign unique ids that don't collide with existing question ids
+  const existingIds = new Set((existing.questions || []).map(q => String(q.id)));
+  let counter = (existing.questions || []).length + 1;
+  parsed.forEach(q => {
+    if (!q.id || existingIds.has(String(q.id))) {
+      while (existingIds.has('q' + counter)) counter++;
+      q.id = 'q' + counter;
+      counter++;
+    }
+    existingIds.add(String(q.id));
+  });
+
+  const posRaw = document.getElementById('add-question-position').value.trim();
+  const pos = posRaw ? Math.max(1, Math.min(parseInt(posRaw, 10), (existing.questions || []).length + 1)) : null;
+
+  const list = [...(existing.questions || [])];
+  if (pos) list.splice(pos - 1, 0, ...parsed);
+  else list.push(...parsed);
+
+  const btn = document.getElementById('btn-import-add-question');
+  setLoading(btn, true, 'Importing…');
+  const { error } = await sb.from('quizzes').update({ questions: list }).eq('id', addQuestionTargetQuizId);
+  setLoading(btn, false);
+  if (error) { toast('Could not update quiz: ' + error.message, 'error'); return; }
+
+  existing.questions = list;
+  renderQuizzes();
+  toast(`Added ${parsed.length} question(s) to "${existing.title}"!`, 'success');
+
+  document.getElementById('add-question-json').value = '';
+  document.getElementById('add-question-position').value = '';
+  statusEl.textContent = '';
+  closeModal('modal-add-question');
+});
+
+
 let activeQuizId        = null;
 let activeQuizTitle     = '';
 let activeQuizQuestions = [];
@@ -1262,6 +1455,10 @@ function renderFriends(friends, pendingRequests) {
         <button class="btn btn--ghost btn--small btn-remove-friend" data-friend-id="${friend.id}">Remove</button>
       </div>
     `;
+    card.addEventListener('click', e => {
+      if (e.target.closest('.friend-actions')) return;
+      openFriendProfile(friend);
+    });
     card.querySelector('.btn-remove-friend').addEventListener('click', async () => {
       if (!confirm('Remove this friend?')) return;
       await sb.from('friendships').delete()
@@ -1270,8 +1467,48 @@ function renderFriends(friends, pendingRequests) {
       card.remove();
       toast('Friend removed.', 'info');
     });
-    card.querySelector('.btn-challenge-friend').addEventListener('click', () => {
-      sendChallenge(friend.id, friend.display_name);
+    card.querySelector('.btn-challenge-friend').addEventListener('click', async () => {
+      const quizzes = await loadAllQuizzesForUser();
+      if (!quizzes.length) {
+        toast('Create a quiz first to send a challenge.', 'info');
+        return;
+      }
+
+      const picker = document.getElementById('share-quiz-picker');
+      const pickerBlock = document.getElementById('share-quiz-picker-block');
+      picker.innerHTML = quizzes.map(q =>
+        `<option value="${q.id}">${escHtml(q.title)}</option>`).join('');
+      pickerBlock.style.display = '';
+
+      const applyQuiz = (q) => {
+        currentShareQuizId = q.id;
+        const qCount = Array.isArray(q.questions) ? q.questions.length : 0;
+        initShareSelection(qCount);
+        setupShareModal(q);
+      };
+
+      picker.onchange = () => {
+        const q = quizzes.find(qq => qq.id === picker.value);
+        if (q) applyQuiz(q);
+      };
+
+      applyQuiz(quizzes[0]);
+      picker.value = quizzes[0].id;
+
+      openModal('modal-share');
+
+      // Switch to "To Friends" tab
+      const friendTabBtn = document.querySelector('.share-tabs .tab-btn[data-share-tab="friend"]');
+      friendTabBtn?.click();
+
+      // Pre-check this friend and enable "Send as Challenge"
+      setTimeout(() => {
+        const cb = document.querySelector(
+          `#share-friend-pick-list input[data-friend-id="${friend.id}"]`);
+        if (cb) cb.checked = true;
+        const challengeCb = document.getElementById('share-as-challenge-friend');
+        if (challengeCb) challengeCb.checked = true;
+      }, 0);
     });
     list.appendChild(card);
   });
@@ -1296,7 +1533,6 @@ function renderFriends(friends, pendingRequests) {
       const row = document.createElement('div');
       row.className = 'friend-request-row';
       row.innerHTML = `
-        <div class="friend-avatar friend-avatar--sm">${escHtml(initials)}</div>
         <div class="friend-info"><strong>${escHtml(p.display_name)}</strong><span>${escHtml(p.roll_no || '')}</span></div>
         <div class="friend-actions">
           <button class="btn btn--primary btn--small btn-accept-request" data-req-id="${req.id}">Accept</button>
@@ -1543,7 +1779,11 @@ async function importSharedChapter(folderId, folderName) {
   const { data: srcQuizzes, error } = await sb.from('quizzes')
     .select('title, questions')
     .eq('folder_id', folderId);
-  if (error) { toast('Could not load chapter: ' + error.message, 'error'); return; }
+  if (error) { toast('Could not load chapter: ' + error.message, 'error'); console.error(error); return; }
+  console.log('importSharedChapter: found', srcQuizzes?.length, 'quizzes for folder', folderId);
+  if (!srcQuizzes || srcQuizzes.length === 0) {
+    toast('That chapter has no quizzes (or is not shared publicly yet).', 'error');
+  }
 
   const { data: newFolder, error: fErr } = await sb.from('folders').insert({
     user_id: currentUser.id,
@@ -1645,9 +1885,14 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
 
   // Recipients need to be able to read this folder + its quizzes.
-  await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
+  const { error: fErr } = await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
+  if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); console.error(fErr); return; }
   folder.is_public = true;
-  await sb.from('quizzes').update({ is_public: true }).eq('folder_id', folder.id);
+  const { error: qErr, count } = await sb.from('quizzes')
+    .update({ is_public: true }, { count: 'exact' })
+    .eq('folder_id', folder.id);
+  if (qErr) { toast('Could not make quizzes public: ' + qErr.message, 'error'); console.error(qErr); return; }
+  console.log('Marked quizzes public:', count);
   quizzesCache.forEach(q => { if (q.folder_id === folder.id) q.is_public = true; });
 
   for (const cb of checked) {
@@ -1691,6 +1936,18 @@ function getShareSelectedQuestions(quiz) {
     return shuffled.slice(0, count);
   }
   return all;
+}
+
+let allQuizzesCache = null;
+async function loadAllQuizzesForUser() {
+  if (allQuizzesCache) return allQuizzesCache;
+  const { data, error } = await sb.from('quizzes')
+    .select('id, title, questions, folder_id')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+  if (error) { console.warn('loadAllQuizzesForUser error:', error.message); return []; }
+  allQuizzesCache = data || [];
+  return allQuizzesCache;
 }
 
 async function setupShareModal(quiz) {
@@ -1767,7 +2024,7 @@ document.getElementById('btn-send-shared-quiz')?.addEventListener('click', async
       user_id: currentUser.id,
       title: quiz.title + ' (shared subset)',
       questions: selectedQuestions,
-      is_public: true
+      is_public: false
     }).select().single();
     if (error) {
       toast('Could not create subset quiz: ' + error.message, 'error');
@@ -1861,11 +2118,6 @@ function applySessionTimer(timeLimitSeconds) {
 
 
 async function sendSharedQuiz(toUserId, toUserName, quizId, quizTitle, sessionId, timeLimitSeconds) {
-  // Recipient needs to be able to read this quiz row; make it public.
-  await sb.from('quizzes').update({ is_public: true }).eq('id', quizId);
-  const cachedQuiz = quizzesCache.find(q => q.id === quizId);
-  if (cachedQuiz) cachedQuiz.is_public = true;
-
   await sb.from('inbox_messages').insert({
     to_user_id: toUserId,
     from_user_id: currentUser?.id,
@@ -2193,7 +2445,6 @@ async function renderGlobalSearchResults(query) {
       const initials = (u.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
       row.innerHTML = `
         <div class="global-search-item-left">
-          <div class="friend-avatar friend-avatar--sm">${escHtml(initials)}</div>
           <div class="global-search-item-text"><strong>${escHtml(u.display_name)}</strong><span>${escHtml(u.roll_no || '')}</span></div>
         </div>
         <button class="btn btn--primary btn--small global-search-item-tag">${friendButtonLabel(u.id)}</button>
@@ -2231,14 +2482,17 @@ async function renderGlobalSearchResults(query) {
 }
 
 // ── ACTIVITY CALENDAR (real data) ────────────────────────────
-async function buildActivityCalendarReal() {
-  if (!currentUser) { buildActivityCalendar(); return; }
+async function buildActivityCalendarReal(userId, gridId, monthsId) {
+  userId = userId || currentUser?.id;
+  gridId = gridId || 'contribution-grid';
+  monthsId = monthsId || 'contribution-months';
+  if (!userId) { buildActivityCalendar(); return; }
 
   const { data } = await sb.from('quiz_attempts')
     .select('attempted_at')
-    .eq('user_id', currentUser.id);
+    .eq('user_id', userId);
 
-  if (!data || data.length === 0) { buildActivityCalendar(); return; }
+  if (!data || data.length === 0) { buildActivityCalendar(gridId, monthsId); return; }
 
   // Build date → count map
   const countMap = {};
@@ -2247,8 +2501,8 @@ async function buildActivityCalendarReal() {
     countMap[d] = (countMap[d] || 0) + 1;
   });
 
-  const grid   = document.getElementById('contribution-grid');
-  const months = document.getElementById('contribution-months');
+  const grid   = document.getElementById(gridId);
+  const months = document.getElementById(monthsId);
   if (!grid) return;
   grid.innerHTML = '';
   months.innerHTML = '';
@@ -2317,7 +2571,6 @@ async function setupFriendSearch() {
         row.style.cssText = 'display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;cursor:pointer;border-bottom:1px solid var(--line)';
         const initials = (u.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
         row.innerHTML = `
-          <div class="friend-avatar friend-avatar--sm">${escHtml(initials)}</div>
           <div><strong>${escHtml(u.display_name)}</strong><br><small>${escHtml(u.roll_no || '')}</small></div>
           <button class="btn btn--primary btn--small" style="margin-left:auto">${friendButtonLabel(u.id)}</button>
         `;
