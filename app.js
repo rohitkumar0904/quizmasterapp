@@ -582,10 +582,32 @@ function renderSubfolders(parentFolderId) {
           '<div class="subfolder-card-name">' + escHtml(sub.name) + '</div>' +
           '<div class="subfolder-card-count" id="sc-count-' + sub.id + '">Loading…</div>' +
           '<div class="subfolder-card-actions">' +
+            '<button class="btn btn--ghost btn--small subfolder-btn-pin' + (pinnedItems?.has('folder-' + sub.id) ? ' active' : '') + '" data-sub-id="' + sub.id + '" title="' + (pinnedItems?.has('folder-' + sub.id) ? 'Unpin' : 'Pin') + '" style="' + (pinnedItems?.has('folder-' + sub.id) ? 'color:#f59e0b;font-weight:bold;' : 'opacity:0.5;') + '">📌</button>' +
             '<button class="btn btn--ghost btn--small subfolder-btn-rename" data-sub-id="' + sub.id + '" title="Rename">✏️</button>' +
             '<button class="btn btn--ghost btn--small subfolder-btn-delete" data-sub-id="' + sub.id + '" title="Delete">🗑️</button>' +
           '</div>' +
         '</div>';
+
+      card.querySelector('.subfolder-btn-pin').addEventListener('click', e => {
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        const isPinned = pinnedItems?.has('folder-' + sub.id);
+        if (isPinned) {
+          if (typeof window.unpinItem === 'function') window.unpinItem('folder', sub.id);
+          btn.classList.remove('active');
+          btn.style.color = '';
+          btn.style.fontWeight = '';
+          btn.style.opacity = '0.5';
+          btn.title = 'Pin';
+        } else {
+          if (typeof window.pinItem === 'function') window.pinItem('folder', sub.id, sub.name, 'Subfolder');
+          btn.classList.add('active');
+          btn.style.color = '#f59e0b';
+          btn.style.fontWeight = 'bold';
+          btn.style.opacity = '1';
+          btn.title = 'Unpin';
+        }
+      });
 
       card.querySelector('.subfolder-btn-rename').addEventListener('click', async e => {
         e.stopPropagation();
@@ -612,7 +634,7 @@ function renderSubfolders(parentFolderId) {
       });
 
       card.addEventListener('click', e => {
-        if (e.target.closest('.subfolder-btn-rename, .subfolder-btn-delete')) return;
+        if (e.target.closest('.subfolder-btn-rename, .subfolder-btn-delete, .subfolder-btn-pin')) return;
         openFolder(sub.id, sub.name, parentFolderId);
       });
       grid.appendChild(card);
