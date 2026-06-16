@@ -3521,7 +3521,30 @@ document.getElementById('btn-flash-back')?.addEventListener('click', () => {
     showView('dashboard');
   }
 });
-
+// Flashcard shuffle options button
+document.getElementById('btn-flash-shuffle-opts')?.addEventListener('click', () => {
+  const grid = document.getElementById('flash-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.flash-card').forEach(card => {
+    const front = card.querySelector('.flash-card-options');
+    if (!front) return;
+    const items = [...front.querySelectorAll('li')];
+    if (items.length < 2) return;
+    // Find which li is the correct one before shuffle
+    const correctLi = items.find(li => li.classList.contains('correct-opt'));
+    // Fisher-Yates shuffle
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      front.insertBefore(items[j], items[i]);
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    // Re-label A, B, C, D after shuffle
+    [...front.querySelectorAll('li')].forEach((li, idx) => {
+      const marker = li.querySelector('.option-marker');
+      if (marker) marker.textContent = String.fromCharCode(65 + idx);
+    });
+  });
+});
 
 
 
