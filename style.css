@@ -4315,7 +4315,7 @@ input[type="checkbox"] { display: none; }
 }
 /* ── FOLDER CARD REDESIGN ─────────────────────────────── */
 .folder-card {
-  min-width: 200px;
+  width: 200px;
   min-height: unset !important;
   padding: 1rem 1.1rem 0.85rem !important;
   display: flex;
