@@ -4397,7 +4397,7 @@ input[type="checkbox"] { display: none; }
 }
 
 /* ── FOLDER GROUPS LAYOUT ─────────────────────────────── */
-#folder-grid { display: block !important; }
+#folder-grid { display: grid !important; }
 
 .folder-group-section { margin-bottom: 28px; }
 
