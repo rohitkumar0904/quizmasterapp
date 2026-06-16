@@ -27,7 +27,8 @@ backdrop.addEventListener('click', closeSidebar);
 
 // ── ROUTER ─────────────────────────────────────────────────
 const ALL_VIEWS = ['dashboard','folder','create','quiz-setup','quiz-player',
-  'result','flashcards','history','friends','backup','inbox','bookmarks','profile','notes'];
+  'result','flashcards','history','friends','backup','inbox','bookmarks','profile','notes',
+  'pomodoro','pomodoro-race'];
 
 function showView(name) {
   ALL_VIEWS.forEach(id => {
@@ -74,7 +75,12 @@ window.enterApp = enterApp; // expose for app.js to call after auth
 
 // ── DARK / LIGHT MODE ──────────────────────────────────────
 let darkMode = false;
-try { darkMode = localStorage.getItem('qm-theme') === 'dark'; } catch (e) {}
+let _hadStoredThemePref = false;
+try {
+  const stored = localStorage.getItem('qm-theme');
+  _hadStoredThemePref = stored !== null;
+  darkMode = stored === 'dark';
+} catch (e) {}
 
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : '');
@@ -226,15 +232,8 @@ document.querySelectorAll('.btn-leaderboard').forEach(btn =>
   btn.addEventListener('click', () => openModal('modal-leaderboard')));
 document.getElementById('btn-close-leaderboard').addEventListener('click', () => closeModal('modal-leaderboard'));
 
-// ── STUDY GROUP MODAL ──────────────────────────────────────
-document.getElementById('btn-new-group').addEventListener('click',    () => openModal('modal-group'));
-document.getElementById('btn-cancel-group').addEventListener('click', () => closeModal('modal-group'));
-document.getElementById('btn-create-group').addEventListener('click', () => {
-  const name = document.getElementById('new-group-name').value.trim();
-  if (!name) return;
-  closeModal('modal-group');
-  document.getElementById('new-group-name').value = '';
-});
+// ── STUDY GROUP (placeholder — feature coming soon, btn-new-group is disabled) ──
+
 document.querySelectorAll('.btn-share-to-friend, .btn-share-to-group').forEach(btn =>
   btn.addEventListener('click', () => { initShareSelection(getQuizTotalFromSlip(btn)); openModal('modal-share'); }));
 
@@ -295,6 +294,9 @@ function openQuizSetup(challengeInfo, lockSelection) {
 
   const qsBlock = document.getElementById('question-selection-block');
   const timerBlock = document.getElementById('timer-setup-block');
+  const shuffleQToggle = document.getElementById('toggle-shuffle-q');
+  const shuffleOptToggle = document.getElementById('toggle-shuffle-opt');
+
   if (lockSelection) {
     // Shared/challenge quiz: force full subset, no range/random re-selection
     const rFrom = document.getElementById('range-from');
@@ -309,9 +311,22 @@ function openQuizSetup(challengeInfo, lockSelection) {
     if (rCount) rCount.textContent = activeQuizQuestions.length;
     if (qsBlock) qsBlock.style.display = 'none';
     if (timerBlock) timerBlock.style.display = 'none';
+
+    // Always shuffle questions & options for shared/challenge quizzes,
+    // and lock the toggles so they can't be turned off.
+    if (shuffleQToggle) { shuffleQToggle.checked = true; shuffleQToggle.disabled = true; }
+    if (shuffleOptToggle) { shuffleOptToggle.checked = true; shuffleOptToggle.disabled = true; }
+    const lockedHint = document.getElementById('shuffle-locked-hint');
+    if (lockedHint) lockedHint.style.display = 'block';
   } else {
     if (qsBlock) qsBlock.style.display = '';
     if (timerBlock) timerBlock.style.display = '';
+
+    // Restore normal (user-controlled) shuffle toggles for own quizzes.
+    if (shuffleQToggle) shuffleQToggle.disabled = false;
+    if (shuffleOptToggle) shuffleOptToggle.disabled = false;
+    const lockedHint = document.getElementById('shuffle-locked-hint');
+    if (lockedHint) lockedHint.style.display = 'none';
   }
 
   showView('quiz-setup');
@@ -521,7 +536,10 @@ function renderPlayer() {
   // restore selected option + review state for this question (demo: single shared question card)
   const state = quizState[currentQ];
   document.querySelectorAll('.option-item').forEach((o, i) => {
-    o.classList.toggle('selected', state.optionIndex === i);
+    const isSelected = state.optionIndex === i;
+    o.classList.toggle('selected', isSelected);
+    const radio = o.querySelector('input[type="radio"]');
+    if (radio) radio.checked = isSelected;
   });
   document.getElementById('btn-q-review').classList.toggle('active', state.marked);
 
@@ -1006,7 +1024,36 @@ function syncPinnedStrip() {
     // Click chip body → navigate
     chip.addEventListener('click', e => {
       if (e.target.closest('.pin-chip-remove')) return;
-      showView(item.type === 'folder' ? 'folder' : 'folder');
+      if (item.type === 'folder') {
+        // Open the pinned folder directly
+        if (typeof openFolder === 'function') {
+          openFolder(item.id, item.name);
+        } else {
+          showView('folder');
+        }
+      } else {
+  // Quiz pin — open the folder containing this quiz
+  const quiz = (typeof quizzesCache !== 'undefined' ? quizzesCache : []).find(q => q.id === item.id);
+  if (quiz && typeof openFolder === 'function') {
+    const folder = (typeof foldersCache !== 'undefined' ? foldersCache : []).find(f => f.id === quiz.folder_id);
+    openFolder(quiz.folder_id, folder?.name || 'Folder');
+  } else if (typeof openFolder === 'function') {
+    // Quiz not in cache (fresh session) — fetch folder_id from DB
+    sb.from('quizzes')
+      .select('id, folder_id, title')
+      .eq('id', item.id)
+      .single()
+      .then(({ data: q }) => {
+        if (q) {
+          openFolder(q.folder_id, item.meta || 'Folder');
+        } else {
+          toast('Quiz not found', 'error');
+        }
+      });
+  } else {
+    showView('folder');
+  }
+}
     });
     // Remove chip
     chip.querySelector('.pin-chip-remove').addEventListener('click', e => {
