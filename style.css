@@ -1755,6 +1755,7 @@ select:focus {
   .main {
     padding: 1.25rem 1rem 5.5rem;
     max-width: 100%;
+     margin-top: 40px;
   }
 
   .view-header h2 { font-size: 1.4rem; }
