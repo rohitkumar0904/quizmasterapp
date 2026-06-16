@@ -15,6 +15,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // ── CLIENT ──────────────────────────────────────────────────
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.sb = sb; // expose for pomodoro-race.js
 
 // ── CURRENT SESSION ─────────────────────────────────────────
 let currentUser    = null;  // auth.User
@@ -119,17 +120,26 @@ async function handleLogout() {
   currentUser = null;
   currentProfile = null;
   document.getElementById('app-shell').style.display = 'none';
+  // Hide fixed-position elements that leak outside app-shell on logout
+  ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
+    document.querySelectorAll(sel).forEach(el => el.style.display = 'none');
+  });
   const auth = document.getElementById('view-auth');
   auth.style.display = 'flex';
   auth.classList.add('active');
   toast('Logged out.', 'info');
 }
 
+
 async function onSignedIn(user) {
   currentUser = user;
   await loadProfile();
   document.getElementById('view-auth').style.display = 'none';
   document.getElementById('app-shell').style.display = 'flex';
+  // Restore fixed elements hidden on logout
+  ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
+    document.querySelectorAll(sel).forEach(el => el.style.display = '');
+  });
   showView('dashboard');
   populateUI();
   await Promise.all([
@@ -182,13 +192,12 @@ function populateUI() {
       .toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
   }
 
-  // Theme — sync with value saved in Supabase (covers cross-device login).
-  // The <head> inline script + oldstatic.js already applied the locally
-  // cached theme on page load to avoid a flash; here we just reconcile
-  // with the server value if it differs.
-  let _localThemeSet = false;
-  try { _localThemeSet = localStorage.getItem('qm-theme') !== null; } catch (e) {}
-  if (!_localThemeSet) {
+  // Theme — localStorage is the source of truth for this device (applied
+  // instantly on page load via the <head> script + oldstatic.js, so the
+  // UI never flashes). Only fall back to the value saved in Supabase if
+  // this device had no local preference before this page load (e.g. first
+  // login on a new device/browser).
+  if (typeof _hadStoredThemePref !== 'undefined' && !_hadStoredThemePref) {
     if (currentProfile.theme === 'dark' && !darkMode) {
       darkMode = true;
       applyTheme();
@@ -236,9 +245,20 @@ async function persistTheme() {
 
 // ── FOLDERS ──────────────────────────────────────────────────
 let foldersCache = [];  // array of folder rows
+let groupsCache  = [];  // array of group rows
+
+async function loadGroups() {
+  if (!currentUser) return;
+  const { data } = await sb.from('groups')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('sort_order', { ascending: true });
+  groupsCache = data || [];
+}
 
 async function loadFolders() {
   if (!currentUser) return;
+  await loadGroups();
   const { data, error } = await sb.from('folders')
     .select('*')
     .eq('user_id', currentUser.id)
@@ -252,92 +272,146 @@ function renderFolders() {
   const grid = document.getElementById('folder-grid');
   if (!grid) return;
 
-  // Remove dynamically added folder cards
-  grid.querySelectorAll('.folder-card[data-folder-id]').forEach(c => c.remove());
+  grid.querySelectorAll('.folder-card[data-folder-id], .folder-card--back, .folder-group-section').forEach(el => el.remove());
 
-  foldersCache.forEach(folder => {
-    const card = document.createElement('div');
-    card.className = 'folder-card' + (folder.is_pinned ? ' folder-card--pinned' : '');
-    card.dataset.folderId = folder.id;
-    card.innerHTML = `
-      <div class="folder-card-top">
-        <button class="btn-pin ${folder.is_pinned ? 'active' : ''}" 
-          data-item-type="folder" data-item-id="${folder.id}"
-          data-item-name="${escHtml(folder.name)}" data-item-meta="Folder"
-          title="${folder.is_pinned ? 'Unpin folder' : 'Pin folder'}">📌</button>
-        <button class="btn-toggle-visibility" title="${folder.is_public ? 'Make Private' : 'Make Public'}">
-          ${folder.is_public ? '🔒 Make Private' : '🌐 Make Public'}
-        </button>
-      </div>
-      <span class="folder-icon">📁</span>
-      <h3>${escHtml(folder.name)}</h3>
-      <span class="folder-count" id="folder-count-${folder.id}">Loading…</span>
-      <div class="folder-card-actions">
-        <button class="btn btn--ghost btn--small btn-rename-folder" data-folder-id="${folder.id}">✏️ Rename</button>
-        <button class="btn btn--ghost btn--small btn-delete-folder" data-folder-id="${folder.id}">🗑️</button>
-      </div>
-      <span class="visibility-badge ${folder.is_public ? 'visibility-badge--public' : ''}" data-visibility-badge>
-        ${folder.is_public ? '🌐 Public' : '🔒 Private'}
-      </span>
-    `;
+  const rootFolders = foldersCache.filter(f => !f.parent_id);
 
-    // Click to open folder
-    card.addEventListener('click', e => {
-      if (e.target.closest('.btn-pin, .btn-toggle-visibility, .btn-rename-folder, .btn-delete-folder')) return;
-      openFolder(folder.id, folder.name);
+  if (groupsCache.length === 0) {
+    rootFolders.forEach(folder => renderFolderCard(folder, grid, true));
+  } else {
+    groupsCache.forEach(group => {
+      const inGroup = rootFolders.filter(f => f.group_id === group.id);
+      if (!inGroup.length) return;
+
+      const section = document.createElement('div');
+      section.className = 'folder-group-section';
+      section.dataset.groupId = group.id;
+      section.innerHTML =
+        '<div class="folder-group-header">' +
+          '<h3 class="folder-group-title">' + escHtml(group.name) + '</h3>' +
+          '<button class="btn btn--ghost btn--small btn-delete-group" data-group-id="' + group.id + '" title="Delete group">\u{1F5D1}</button>' +
+        '</div>' +
+        '<div class="folder-group-grid" data-group-grid="' + group.id + '"></div>';
+
+      section.querySelector('.btn-delete-group').addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm('Delete group "' + group.name + '"? Folders will be ungrouped.')) return;
+        await sb.from('groups').delete().eq('id', group.id);
+        foldersCache.forEach(f => { if (f.group_id === group.id) f.group_id = null; });
+        groupsCache = groupsCache.filter(g => g.id !== group.id);
+        renderFolders();
+        toast('Group deleted.', 'info');
+      });
+
+      const addCard = grid.querySelector('.folder-card--add');
+      grid.insertBefore(section, addCard);
+
+      const groupGrid = section.querySelector('[data-group-grid="' + group.id + '"]');
+      inGroup.forEach(folder => renderFolderCard(folder, groupGrid, false));
     });
 
-    // Visibility toggle
-    card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
-      e.stopPropagation();
-      const newVal = !folder.is_public;
-      const { error } = await sb.from('folders').update({ is_public: newVal }).eq('id', folder.id);
-      if (error) {
-        console.error('folder visibility update error:', error);
-        toast('Could not update visibility: ' + error.message, 'error');
-        return;
-      }
-      folder.is_public = newVal;
-      const badge = card.querySelector('[data-visibility-badge]');
-      badge.textContent = folder.is_public ? '🌐 Public' : '🔒 Private';
-      badge.className = `visibility-badge ${folder.is_public ? 'visibility-badge--public' : ''}`;
-      card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '🔒 Make Private' : '🌐 Make Public';
-      buildPublicLibrary();
-    });
+    const ungrouped = rootFolders.filter(f => !f.group_id);
+    if (ungrouped.length) {
+      const section = document.createElement('div');
+      section.className = 'folder-group-section';
+      section.innerHTML =
+        '<div class="folder-group-header">' +
+          '<h3 class="folder-group-title" style="color:var(--text-muted,#888)">Ungrouped</h3>' +
+        '</div>' +
+        '<div class="folder-group-grid" id="ungrouped-grid"></div>';
+      const addCard = grid.querySelector('.folder-card--add');
+      grid.insertBefore(section, addCard);
+      ungrouped.forEach(folder => renderFolderCard(folder, section.querySelector('#ungrouped-grid'), false));
+    }
+  }
 
-    // Rename
-    card.querySelector('.btn-rename-folder').addEventListener('click', async e => {
-      e.stopPropagation();
-      const newName = prompt('Rename folder:', folder.name);
-      if (!newName || !newName.trim()) return;
-      await sb.from('folders').update({ name: newName.trim() }).eq('id', folder.id);
-      folder.name = newName.trim();
-      card.querySelector('h3').textContent = newName.trim();
-      toast('Folder renamed!', 'success');
-    });
-
-    // Delete
-    card.querySelector('.btn-delete-folder').addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!confirm(`Delete folder "${folder.name}"? All quizzes inside will also be deleted.`)) return;
-      await sb.from('folders').delete().eq('id', folder.id);
-      foldersCache = foldersCache.filter(f => f.id !== folder.id);
-      card.remove();
-      toast('Folder deleted.', 'info');
-    });
-
-    // Insert before the "Add" card
-    const addCard = grid.querySelector('.folder-card--add');
-    grid.insertBefore(card, addCard);
-
-    // Load quiz count
-    loadFolderCount(folder.id);
-  });
-
-  // Update save-to-folder select
   updateSaveFolderSelect();
   updateTargetFolderSelect();
 }
+
+function renderFolderCard(folder, container, insertBefore) {
+  const card = document.createElement('div');
+  card.className = 'folder-card' + (folder.is_pinned ? ' folder-card--pinned' : '');
+  card.dataset.folderId = folder.id;
+
+  const groupOptions = groupsCache.map(g =>
+    '<option value="' + g.id + '"' + (folder.group_id === g.id ? ' selected' : '') + '>' + escHtml(g.name) + '</option>'
+  ).join('');
+
+  card.innerHTML =
+    '<div class="folder-card-top">' +
+      '<button class="btn-pin ' + (folder.is_pinned ? 'active' : '') + '" data-item-type="folder" data-item-id="' + folder.id + '" data-item-name="' + escHtml(folder.name) + '" data-item-meta="Folder" title="' + (folder.is_pinned ? 'Unpin' : 'Pin') + ' folder">\uD83D\uDCCC</button>' +
+      '<button class="btn-toggle-visibility" title="' + (folder.is_public ? 'Make Private' : 'Make Public') + '">' + (folder.is_public ? '\uD83D\uDD12 Private' : '\uD83C\uDF10 Public') + '</button>' +
+    '</div>' +
+    '<span class="folder-icon">\uD83D\uDCC1</span>' +
+    '<h3>' + escHtml(folder.name) + '</h3>' +
+    '<span class="folder-count" id="folder-count-' + folder.id + '">Loading\u2026</span>' +
+    (groupsCache.length ?
+      '<select class="folder-group-select" title="Move to group"><option value="">\u2014 No group \u2014</option>' + groupOptions + '</select>'
+      : '') +
+    '<div class="folder-card-actions">' +
+      '<button class="btn btn--ghost btn--small btn-rename-folder" data-folder-id="' + folder.id + '">\u270F\uFE0F Rename</button>' +
+      '<button class="btn btn--ghost btn--small btn-delete-folder" data-folder-id="' + folder.id + '">\uD83D\uDDD1\uFE0F</button>' +
+    '</div>' +
+    '<span class="visibility-badge ' + (folder.is_public ? 'visibility-badge--public' : '') + '" data-visibility-badge>' + (folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private') + '</span>';
+
+  card.addEventListener('click', e => {
+    if (e.target.closest('.btn-pin, .btn-toggle-visibility, .btn-rename-folder, .btn-delete-folder, .folder-group-select')) return;
+    openFolder(folder.id, folder.name);
+  });
+
+  const sel = card.querySelector('.folder-group-select');
+  if (sel) {
+    sel.addEventListener('change', async e => {
+      e.stopPropagation();
+      const gid = e.target.value || null;
+      await sb.from('folders').update({ group_id: gid }).eq('id', folder.id);
+      folder.group_id = gid;
+      renderFolders();
+    });
+  }
+
+  card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
+    e.stopPropagation();
+    const newVal = !folder.is_public;
+    const { error } = await sb.from('folders').update({ is_public: newVal }).eq('id', folder.id);
+    if (error) { toast('Could not update visibility: ' + error.message, 'error'); return; }
+    folder.is_public = newVal;
+    const badge = card.querySelector('[data-visibility-badge]');
+    badge.textContent = folder.is_public ? '\u{1F310} Public' : '\u{1F512} Private';
+    badge.className = 'visibility-badge' + (folder.is_public ? ' visibility-badge--public' : '');
+    card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '\u{1F512} Make Private' : '\u{1F310} Make Public';
+    buildPublicLibrary();
+  });
+
+  card.querySelector('.btn-rename-folder').addEventListener('click', async e => {
+    e.stopPropagation();
+    const newName = prompt('Rename folder:', folder.name);
+    if (!newName || !newName.trim()) return;
+    await sb.from('folders').update({ name: newName.trim() }).eq('id', folder.id);
+    folder.name = newName.trim();
+    card.querySelector('h3').textContent = newName.trim();
+    toast('Folder renamed!', 'success');
+  });
+
+  card.querySelector('.btn-delete-folder').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm('Delete folder "' + folder.name + '"? All quizzes inside will also be deleted.')) return;
+    await sb.from('folders').delete().eq('id', folder.id);
+    foldersCache = foldersCache.filter(f => f.id !== folder.id);
+    card.remove();
+    toast('Folder deleted.', 'info');
+  });
+
+  if (insertBefore) {
+    const addCard = container.querySelector('.folder-card--add');
+    container.insertBefore(card, addCard);
+  } else {
+    container.appendChild(card);
+  }
+  loadFolderCount(folder.id);
+}
+
 
 async function loadFolderCount(folderId) {
   const { count } = await sb.from('quizzes')
@@ -365,16 +439,52 @@ let activeFolderId   = null;
 let activeFolderName = '';
 let quizzesCache     = [];
 
-async function openFolder(folderId, folderName) {
+async function openFolder(folderId, folderName, parentFolderId) {
   activeFolderId = folderId;
   activeFolderName = folderName;
 
   // Update folder view header
-  const h = document.getElementById('folder-view-name');
-  if (h) h.textContent = folderName;
+  const titleEl = document.getElementById('folder-title') || document.getElementById('folder-view-name');
+  if (titleEl) titleEl.textContent = folderName;
+
+  // Back button — go to parent folder or dashboard
+  const backBtn = document.querySelector('#view-folder .btn-back');
+  if (backBtn) {
+    if (parentFolderId) {
+      const parentFolder = foldersCache.find(f => f.id === parentFolderId);
+      backBtn.textContent = '<- ' + (parentFolder?.name || 'Back');
+      backBtn.removeAttribute('data-back');
+      backBtn.onclick = () => openFolder(parentFolderId, parentFolder?.name || 'Back', parentFolder?.parent_id ?? null);
+    } else {
+      backBtn.textContent = '<- Folders';
+      backBtn.onclick = null;
+      backBtn.setAttribute('data-back', 'dashboard');
+    }
+  }
 
   showView('folder');
+  renderSubfolders(folderId);
   await loadQuizzes(folderId);
+}
+
+function renderSubfolders(parentFolderId) {
+  const list = document.getElementById('quiz-list');
+  if (!list) return;
+  list.querySelectorAll('.subfolder-card').forEach(c => c.remove());
+
+  const subs = foldersCache.filter(f => f.parent_id === parentFolderId);
+  if (!subs.length) return;
+
+  const frag = document.createDocumentFragment();
+  subs.forEach(sub => {
+    const card = document.createElement('article');
+    card.className = 'subfolder-card';
+    card.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--card,#1e1e2e);border:1px solid var(--border,#333);border-radius:10px;cursor:pointer;margin-bottom:8px;';
+    card.innerHTML = '<span style="font-size:1.4rem">\uD83D\uDCC1</span><strong>' + escHtml(sub.name) + '</strong><span style="margin-left:auto;color:#888;font-size:0.85rem">Folder -></span>';
+    card.addEventListener('click', () => openFolder(sub.id, sub.name, parentFolderId));
+    frag.appendChild(card);
+  });
+  list.insertBefore(frag, list.firstChild);
 }
 
 async function loadQuizzes(folderId) {
@@ -382,7 +492,7 @@ async function loadQuizzes(folderId) {
     .select('id, title, is_public, is_pinned, created_at, questions')
     .eq('folder_id', folderId)
     .order('created_at', { ascending: false });
-  if (error) { toast('Could not load quizzes', 'error'); return; }
+  if (error && !data?.length) return;
   quizzesCache = data || [];
   renderQuizzes();
 }
@@ -423,7 +533,9 @@ function renderQuizzes() {
       <div class="quiz-slip-actions">
         <button class="btn btn--primary btn--small btn-start-quiz-real" data-quiz-id="${quiz.id}">▶ Start Quiz</button>
         <button class="btn btn--ghost btn--small btn-flashcard-quiz-real" data-quiz-id="${quiz.id}">⬡ Flashcards</button>
+        <button class="btn btn--ghost btn--small btn-pomodoro-quiz" data-quiz-id="${quiz.id}" title="Pomodoro">🍅</button>
         <button class="btn btn--ghost btn--small btn-share-quiz-real" data-quiz-id="${quiz.id}">↗ Share</button>
+        <button class="btn btn--ghost btn--small btn-rename-quiz" data-quiz-id="${quiz.id}" title="Rename quiz">✏️</button>
         <button class="btn btn--ghost btn--small btn-delete-quiz" data-quiz-id="${quiz.id}">🗑️</button>
         <button class="btn btn--ghost btn--small btn-add-question" data-quiz-title="${escHtml(quiz.title)}" data-quiz-id="${quiz.id}">＋ Add Q</button>
       </div>
@@ -438,6 +550,20 @@ function renderQuizzes() {
       badge.className = `visibility-badge ${quiz.is_public ? 'visibility-badge--public' : ''}`;
       slip.querySelector('.btn-toggle-visibility').textContent = quiz.is_public ? '🔒 Make Private' : '🌐 Make Public';
       await sb.from('quizzes').update({ is_public: quiz.is_public }).eq('id', quiz.id);
+    });
+
+    // Rename quiz
+    slip.querySelector('.btn-rename-quiz').addEventListener('click', async e => {
+      e.stopPropagation();
+      const newName = prompt('Rename quiz:', quiz.title);
+      if (!newName || !newName.trim()) return;
+      const { error } = await sb.from('quizzes').update({ title: newName.trim() }).eq('id', quiz.id);
+      if (error) { toast('Could not rename: ' + error.message, 'error'); return; }
+      quiz.title = newName.trim();
+      slip.querySelector('h3').textContent = newName.trim();
+      const pinBtn = slip.querySelector('.btn-pin');
+      if (pinBtn) pinBtn.dataset.itemName = newName.trim();
+      toast('Quiz renamed!', 'success');
     });
 
     // Delete quiz
@@ -490,6 +616,14 @@ function renderQuizzes() {
       showView('flashcards');
     });
 
+    // 🍅 Pomodoro — launch directly with this quiz
+    slip.querySelector('.btn-pomodoro-quiz').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!quizzesCache.find(q => q.id === quiz.id)) quizzesCache.push(quiz);
+      if (typeof startPomodoroSetup === 'function') startPomodoroSetup(quiz.id);
+      else toast('Pomodoro not loaded yet — refresh the page', 'error');
+    });
+
     // Share quiz
     slip.querySelector('.btn-share-quiz-real').addEventListener('click', () => {
       initShareSelection(qCount);
@@ -517,9 +651,20 @@ function updateTargetFolderSelect() {
   const sel = document.getElementById('select-target-folder');
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = foldersCache.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('')
-    + '<option value="__new">＋ Create new folder…</option>';
-  // Restore previous selection if it still exists, else default to active folder or first
+
+  // Build indented folder names showing path
+  function getFolderLabel(folder, depth) {
+    return '\u00a0\u00a0'.repeat(depth) + (depth > 0 ? '\u2514 ' : '') + folder.name;
+  }
+  function buildOptions(parentId, depth) {
+    return foldersCache
+      .filter(f => (f.parent_id ?? null) === parentId)
+      .map(f => `<option value="${f.id}">${escHtml(getFolderLabel(f, depth))}</option>` + buildOptions(f.id, depth + 1))
+      .join('');
+  }
+
+  sel.innerHTML = buildOptions(null, 0) + '<option value="__new">\uff0b Create new folder\u2026</option>';
+
   if (prev && [...sel.options].some(o => o.value === prev)) {
     sel.value = prev;
   } else if (activeFolderId && [...sel.options].some(o => o.value === activeFolderId)) {
@@ -597,39 +742,189 @@ async function saveQuiz() {
   showView('folder');
 }
 
-// ── FRIEND PROFILE (view their public library) ─────────────────
+// ── FRIEND / PUBLIC PROFILE (view their public library) ─────────────────
 document.getElementById('btn-close-friend-profile')?.addEventListener('click', () => closeModal('modal-friend-profile'));
 
+// `friend` needs at least { id }. Other fields (display_name, roll_no,
+// is_public, created_at) are fetched fresh so this works for friend cards,
+// search results, and "preview my own profile" alike.
 async function openFriendProfile(friend) {
-  const initials = (friend.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  if (!friend?.id) return;
+
+  const isSelf = friend.id === currentUser?.id;
+
+  let profile = friend;
+  // Always fetch a fresh copy so we have created_at + is_public,
+  // even if the caller only passed { id, display_name, ... }.
+  const { data: freshProfile } = await sb.from('profiles')
+    .select('id, display_name, roll_no, is_public, created_at')
+    .eq('id', friend.id)
+    .maybeSingle();
+  if (freshProfile) profile = freshProfile;
+
+  const initials = (profile.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   document.getElementById('friend-profile-avatar').textContent = initials;
-  document.getElementById('friend-profile-name').textContent = friend.display_name || 'Friend';
-  document.getElementById('friend-profile-rollno').textContent = friend.roll_no || '';
+  document.getElementById('friend-profile-name').textContent = profile.display_name || (isSelf ? 'You' : 'User');
+  document.getElementById('friend-profile-rollno').textContent = profile.roll_no || '';
+
+  const joinedEl = document.getElementById('friend-profile-joined');
+  if (joinedEl) {
+    joinedEl.textContent = profile.created_at
+      ? 'Member since ' + new Date(profile.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+      : '';
+  }
+
+  const body = document.getElementById('friend-profile-body');
+  const privateMsg = document.getElementById('friend-profile-private-msg');
+
+  // RLS already prevents reading another user's private profile data
+  // (folders/quizzes/likes all require is_public=true or own user_id), but
+  // we also show a friendly message instead of an empty/broken-looking modal.
+  // For self-preview, showing this too helps the user understand what
+  // others see when their profile is set to private.
+  const isPrivateToViewer = profile.is_public === false;
+
+  if (isPrivateToViewer) {
+    if (body) body.style.display = 'none';
+    if (privateMsg) {
+      privateMsg.textContent = isSelf
+        ? '🔒 Your profile is private. This is what others see — toggle visibility in My Profile to share your library.'
+        : '🔒 This profile is private.';
+      privateMsg.style.display = 'block';
+    }
+    openModal('modal-friend-profile');
+    return;
+  }
+
+  if (body) body.style.display = '';
+  if (privateMsg) privateMsg.style.display = 'none';
+
   openModal('modal-friend-profile');
   await Promise.all([
-    renderFriendPublicLibrary(friend),
-    renderFriendStats(friend),
-    buildActivityCalendarReal(friend.id, 'friend-contribution-grid', 'friend-contribution-months')
+    renderFriendPublicLibrary(profile, isSelf),
+    renderFriendStats(profile),
+    buildActivityCalendarReal(profile.id, 'friend-contribution-grid', 'friend-contribution-months')
   ]);
+}
+
+// ── STREAK CALCULATION ────────────────────────────────────────
+// Given a map of { 'YYYY-MM-DD': count }, returns { current, best }.
+// current = consecutive days ending today (or yesterday if not attempted today).
+// best = longest ever consecutive-day run.
+function calcStreak(countMap) {
+  const activeDays = new Set(Object.keys(countMap).filter(d => countMap[d] > 0));
+  if (activeDays.size === 0) return { current: 0, best: 0 };
+
+  const toKey = d => d.toISOString().slice(0, 10);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Current streak — walk back from today
+  let current = 0;
+  const check = new Date(today);
+  // Allow streak to still count if today hasn't been attempted yet (start from yesterday)
+  if (!activeDays.has(toKey(check))) check.setDate(check.getDate() - 1);
+  while (activeDays.has(toKey(check))) {
+    current++;
+    check.setDate(check.getDate() - 1);
+  }
+
+  // Best streak — sort all active dates and find longest run
+  const sorted = [...activeDays].sort();
+  let best = 0, run = 0, prev = null;
+  sorted.forEach(key => {
+    const d = new Date(key);
+    if (prev) {
+      const diff = (d - prev) / 86400000;
+      run = diff === 1 ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    if (run > best) best = run;
+    prev = d;
+  });
+
+  return { current, best };
 }
 
 async function renderFriendStats(friend) {
   const { data: attempts } = await sb.from('quiz_attempts')
-    .select('score, total').eq('user_id', friend.id);
+    .select('score, total, attempted_at, time_taken').eq('user_id', friend.id);
 
-  const totalEl = document.getElementById('friend-stat-total-quizzes');
-  const accEl   = document.getElementById('friend-stat-avg-accuracy');
+  const totalEl  = document.getElementById('friend-stat-total-quizzes');
+  const accEl    = document.getElementById('friend-stat-avg-accuracy');
+  const streakEl = document.getElementById('friend-stat-streak');
+  const bestEl   = document.getElementById('friend-stat-best-streak');
+
   if (!attempts || attempts.length === 0) {
-    if (totalEl) totalEl.textContent = '0';
-    if (accEl) accEl.textContent = '0%';
+    if (totalEl)  totalEl.textContent  = '0';
+    if (accEl)    accEl.textContent    = '0%';
+    if (streakEl) streakEl.textContent = '0';
+    if (bestEl)   bestEl.textContent   = '0';
     return;
   }
+
   if (totalEl) totalEl.textContent = attempts.length;
   const avgPct = attempts.reduce((sum, a) => sum + (a.total > 0 ? (a.score / a.total) * 100 : 0), 0) / attempts.length;
   if (accEl) accEl.textContent = Math.round(avgPct) + '%';
+
+  // Build date→count map for streak
+  const countMap = {};
+  attempts.forEach(a => {
+    const d = (a.attempted_at || '').slice(0, 10);
+    if (d) countMap[d] = (countMap[d] || 0) + 1;
+  });
+  const { current, best } = calcStreak(countMap);
+  if (streakEl) streakEl.textContent = current + (current === 1 ? ' day' : ' days');
+  if (bestEl)   bestEl.textContent   = best + (best === 1 ? ' day' : ' days');
+
+  // Highlight streak card if active
+  const streakCard = streakEl?.closest('.profile-stat-card');
+  if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
 }
 
-async function renderFriendPublicLibrary(friend) {
+// ── MY PROFILE STATS ─────────────────────────────────────────
+async function loadMyProfileStats() {
+  if (!currentUser) return;
+  const { data: attempts } = await sb.from('quiz_attempts')
+    .select('score, total, attempted_at, time_taken')
+    .eq('user_id', currentUser.id);
+
+  if (!attempts || attempts.length === 0) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+  // Build date map for streak
+  const countMap = {};
+  let totalTime7d = 0;
+  let todayCount = 0;
+  attempts.forEach(a => {
+    const d = (a.attempted_at || '').slice(0, 10);
+    if (!d) return;
+    countMap[d] = (countMap[d] || 0) + 1;
+    if (d === today) todayCount++;
+    if (d >= sevenDaysAgo) totalTime7d += (a.time_taken || 0);
+  });
+
+  const { current, best } = calcStreak(countMap);
+  const avgPct = attempts.reduce((sum, a) => sum + (a.total > 0 ? (a.score / a.total) * 100 : 0), 0) / attempts.length;
+  const totalMins7d = Math.round(totalTime7d / 60);
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('stat-quizzes-today', todayCount);
+  set('stat-streak',        current + (current === 1 ? ' day' : ' days'));
+  set('stat-best-streak',   best    + (best === 1    ? ' day' : ' days'));
+  set('stat-quiz-time-week', totalMins7d + 'm');
+  set('stat-avg-accuracy',   Math.round(avgPct) + '%');
+  set('stat-total-quizzes',  attempts.length);
+
+  // Highlight streak card if active
+  const streakCard = document.getElementById('stat-streak')?.closest('.profile-stat-card');
+  if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
+}
+
+async function renderFriendPublicLibrary(friend, isSelf) {
   const grid  = document.getElementById('friend-public-library-grid');
   const empty = document.getElementById('friend-public-library-empty');
   if (!grid) return;
@@ -653,32 +948,64 @@ async function renderFriendPublicLibrary(friend) {
   if (items.length === 0) { if (empty) empty.style.display = 'block'; return; }
   if (empty) empty.style.display = 'none';
 
+  // Like counts + which items the current user has already liked
+  const itemIds = items.map(i => i.id);
+  const [{ data: likes }, { data: myLikes }] = await Promise.all([
+    sb.from('likes').select('item_id').in('item_id', itemIds),
+    currentUser
+      ? sb.from('likes').select('item_id').eq('user_id', currentUser.id).in('item_id', itemIds)
+      : Promise.resolve({ data: [] })
+  ]);
+  const likeMap = {};
+  (likes || []).forEach(l => { likeMap[l.item_id] = (likeMap[l.item_id] || 0) + 1; });
+  const myLikedSet = new Set((myLikes || []).map(l => l.item_id));
+
   items.forEach(item => {
     const el = document.createElement('article');
     el.className = 'public-lib-card';
+    const likeCount = likeMap[item.id] || 0;
+    const isLiked = myLikedSet.has(item.id);
     el.innerHTML = `
       <div class="public-lib-card-top">
         <span class="public-lib-type">${item.label}</span>
         <span class="visibility-badge visibility-badge--public">🌐 Public</span>
       </div>
       <h4>${escHtml(item.title)}</h4>
-      <span class="public-lib-owner">👤 ${escHtml(friend.display_name)} · ${item.meta}</span>
+      <span class="public-lib-owner">👤 ${isSelf ? 'You' : escHtml(friend.display_name)} · ${item.meta}</span>
       <div class="public-lib-actions">
-        <button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>
+        <button class="btn-like${isLiked ? ' liked' : ''}" data-id="${item.id}">❤ <span class="like-count">${likeCount}</span></button>
+        ${isSelf ? '' : '<button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>'}
       </div>
     `;
     grid.appendChild(el);
 
-    el.querySelector('.btn-import-shared-item').addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
-      setLoading(btn, true, 'Adding…');
-      if (item.type === 'folder') {
-        await importSharedChapter(item.id, item.title);
+    el.querySelector('.btn-like').addEventListener('click', async () => {
+      if (!currentUser) return;
+      const btn = el.querySelector('.btn-like');
+      const liked = btn.classList.toggle('liked');
+      const countEl = btn.querySelector('.like-count');
+      if (liked) {
+        await sb.from('likes').insert({ user_id: currentUser.id, item_type: item.type, item_id: item.id });
+        countEl.textContent = parseInt(countEl.textContent) + 1;
       } else {
-        await importSharedQuiz(item.id, item.title, friend.display_name);
+        await sb.from('likes').delete().eq('user_id', currentUser.id).eq('item_id', item.id);
+        countEl.textContent = Math.max(0, parseInt(countEl.textContent) - 1);
       }
-      setLoading(btn, false);
     });
+
+    const importBtn = el.querySelector('.btn-import-shared-item');
+    if (importBtn) {
+      importBtn.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        setLoading(btn, true, 'Adding…');
+        if (item.type === 'folder') {
+          await importSharedChapter(item.id, item.title);
+        } else {
+          await importSharedQuiz(item.id, item.title, friend.display_name);
+        }
+        setLoading(btn, false);
+      });
+    }
   });
 }
 
@@ -797,14 +1124,18 @@ function renderPlayerReal() {
     optionEls.forEach((el, i) => {
       const label = el.querySelector('.option-label');
       const text  = el.querySelector('.option-text');
+      const radio = el.querySelector('input[type="radio"]');
       if (i < numOptions) {
         el.style.display = '';
         if (label) label.textContent = String.fromCharCode(65 + i);
         if (text) text.textContent = q.options[i] || '';
-        el.classList.toggle('selected', quizState[currentQ]?.optionIndex === i);
+        const isSelected = quizState[currentQ]?.optionIndex === i;
+        el.classList.toggle('selected', isSelected);
+        if (radio) radio.checked = isSelected;
       } else {
         el.style.display = 'none';
         el.classList.remove('selected');
+        if (radio) radio.checked = false;
       }
     });
   }
@@ -950,38 +1281,44 @@ async function renderSessionLeaderboard(sessionId) {
 
   const profileMap = new Map((profilesData || []).map(p => [p.id, p]));
 
-  // Best (highest score, then lowest time) attempt per user
-  const bestByUser = new Map();
+  // Group attempts per user, in chronological order (1st, 2nd, 3rd...)
+  const attemptsByUser = new Map();
   (attempts || []).forEach(a => {
-    const prev = bestByUser.get(a.user_id);
-    if (!prev || a.score > prev.score || (a.score === prev.score && a.time_taken < prev.time_taken)) {
-      bestByUser.set(a.user_id, a);
-    }
+    if (!attemptsByUser.has(a.user_id)) attemptsByUser.set(a.user_id, []);
+    attemptsByUser.get(a.user_id).push(a);
   });
+
+  const fmtTime = (t) => {
+    t = t || 0;
+    const mm = String(Math.floor(t / 60)).padStart(2, '0');
+    const ss = String(t % 60).padStart(2, '0');
+    return t > 0 ? `${mm}:${ss}` : '\u2014';
+  };
+  const fmtPct = (a) => a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
 
   const rows = memberIds.map(uid => {
     const profile = profileMap.get(uid);
-    const attempt = bestByUser.get(uid);
+    const userAttempts = attemptsByUser.get(uid) || [];
+    const firstAttempt = userAttempts[0] || null;
     const name = uid === currentUser.id ? 'You' : (profile?.display_name || 'Friend');
     const sub  = profile?.display_name || profile?.roll_no || '';
     const initials = (profile?.display_name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
-    let pct = null, timeStr = '\u2014';
-    if (attempt) {
-      pct = attempt.total > 0 ? Math.round((attempt.score / attempt.total) * 100) : 0;
-      const t = attempt.time_taken || 0;
-      const mm = String(Math.floor(t / 60)).padStart(2, '0');
-      const ss = String(t % 60).padStart(2, '0');
-      timeStr = t > 0 ? `${mm}:${ss}` : '\u2014';
-    }
-    return { uid, name, sub, initials, pct, timeStr, attempt };
+    return {
+      uid, name, sub, initials,
+      pct: firstAttempt ? fmtPct(firstAttempt) : null,
+      timeStr: firstAttempt ? fmtTime(firstAttempt.time_taken) : '\u2014',
+      firstAttempt,
+      attempts: userAttempts
+    };
   });
 
+  // Rank by FIRST attempt only (highest score, then lowest time)
   rows.sort((a, b) => {
     if (a.pct === null && b.pct === null) return 0;
     if (a.pct === null) return 1;
     if (b.pct === null) return -1;
     if (b.pct !== a.pct) return b.pct - a.pct;
-    return (a.attempt.time_taken || 0) - (b.attempt.time_taken || 0);
+    return (a.firstAttempt.time_taken || 0) - (b.firstAttempt.time_taken || 0);
   });
 
   const medals = ['🥇', '🥈', '🥉'];
@@ -990,33 +1327,62 @@ async function renderSessionLeaderboard(sessionId) {
     if (r.pct === null) {
       return `
         <div class="leaderboard-row leaderboard-row--pending${isMe ? ' leaderboard-row--me' : ''}">
-          <span class="lb-rank lb-rank--pending">\u2014</span>
-          <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
-          <div class="lb-info"><strong>${escHtml(r.name)}</strong><span>Not attempted yet</span></div>
-          <div class="lb-score lb-score--pending">\u2014</div>
-          <div class="lb-time">\u2014</div>
+          <div class="leaderboard-row-main">
+            <span class="lb-rank lb-rank--pending">\u2014</span>
+            <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
+            <div class="lb-info"><strong>${escHtml(r.name)}</strong><span>Not attempted yet</span></div>
+            <div class="lb-score lb-score--pending">\u2014</div>
+            <div class="lb-time">\u2014</div>
+          </div>
         </div>`;
     }
     const rank = medals[i] || `#${i + 1}`;
+
+    const extraAttempts = r.attempts.slice(1);
+    const attemptsHtml = extraAttempts.length ? `
+      <div class="lb-attempts">
+        ${r.attempts.map((a, idx) => `
+          <div class="lb-attempt-row${idx === 0 ? ' lb-attempt-row--first' : ''}">
+            <span class="lb-attempt-label">${idx === 0 ? '1st attempt (counts for rank)' : ordinal(idx + 1) + ' attempt'}</span>
+            <span class="lb-attempt-score">${fmtPct(a)}%</span>
+            <span class="lb-attempt-time">${fmtTime(a.time_taken)}</span>
+          </div>`).join('')}
+      </div>` : '';
+
     return `
-      <div class="leaderboard-row${isMe ? ' leaderboard-row--me' : ''}">
-        <span class="lb-rank">${rank}</span>
-        <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
-        <div class="lb-info"><strong>${escHtml(r.name)}</strong><span>${escHtml(r.sub)}</span></div>
-        <div class="lb-score">${r.pct}%</div>
-        <div class="lb-time">${r.timeStr}</div>
+      <div class="leaderboard-row${isMe ? ' leaderboard-row--me' : ''}${extraAttempts.length ? ' leaderboard-row--has-attempts' : ''}">
+        <div class="leaderboard-row-main">
+          <span class="lb-rank">${rank}</span>
+          <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
+          <div class="lb-info">
+            <strong>${escHtml(r.name)}</strong>
+            <span>${escHtml(r.sub)}${r.attempts.length > 1 ? ` · ${r.attempts.length} attempts` : ''}</span>
+          </div>
+          <div class="lb-score">${r.pct}%</div>
+          <div class="lb-time">${r.timeStr}</div>
+        </div>
+        ${attemptsHtml}
       </div>`;
   }).join('');
 
   openModal('modal-leaderboard');
 }
+
+// 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 4 -> "4th", ...
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 async function loadHistory() {
   if (!currentUser) return;
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await sb.from('quiz_attempts')
     .select('*')
     .eq('user_id', currentUser.id)
+    .gte('attempted_at', since)
     .order('attempted_at', { ascending: false })
-    .limit(50);
+    .limit(10);
   if (error) return;
   renderHistory(data || []);
 }
@@ -1434,10 +1800,22 @@ function getFriendStatus(userId) {
 function renderFriends(friends, pendingRequests) {
   const list = document.getElementById('friends-list');
   if (!list) return;
-  list.querySelectorAll('.friend-card[data-friend-id]').forEach(c => c.remove());
+  list.querySelectorAll('.friend-card[data-friend-id], .friend-list-empty').forEach(c => c.remove());
 
   const friendsCount = document.getElementById('friends-count');
   if (friendsCount) friendsCount.textContent = friends.length;
+
+  if (friends.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'friend-list-empty';
+    empty.innerHTML = `
+      <span class="friend-list-empty-icon">🤝</span>
+      <h4>No friends yet</h4>
+      <p>Search for classmates by name or roll number above to send a friend
+        request and start sharing quizzes.</p>
+    `;
+    list.appendChild(empty);
+  }
 
   friends.forEach(friend => {
     const initials = (friend.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -1454,6 +1832,7 @@ function renderFriends(friends, pendingRequests) {
         <button class="btn btn--ghost btn--small btn-challenge-friend" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">⚔️ Challenge</button>
         <button class="btn btn--ghost btn--small btn-remove-friend" data-friend-id="${friend.id}">Remove</button>
       </div>
+      <span class="friend-card-chevron">›</span>
     `;
     card.addEventListener('click', e => {
       if (e.target.closest('.friend-actions')) return;
@@ -1665,6 +2044,16 @@ let inboxCache = [];
 
 async function loadInbox() {
   if (!currentUser) return;
+
+  // ── 24hr auto-expire: delete unread messages older than 24hr ──
+  const expire24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  sb.from('inbox_messages')
+    .delete()
+    .eq('to_user_id', currentUser.id)
+    .eq('is_read', false)
+    .lt('created_at', expire24h)
+    .then(({ error }) => { if (error) console.warn('Auto-expire error:', error.message); });
+
   const { data, error } = await sb.from('inbox_messages')
     .select('*, from_profile:profiles!inbox_messages_from_user_id_fkey(display_name, roll_no)')
     .eq('to_user_id', currentUser.id)
@@ -1674,6 +2063,9 @@ async function loadInbox() {
   inboxCache = data || [];
   renderInbox(inboxCache);
   updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
+
+  // Load "Shared by Me" section
+  loadSharedByMe();
 }
 
 function renderInbox(messages) {
@@ -1703,6 +2095,7 @@ function renderInbox(messages) {
       ${isChallenge && msg.body?.score != null ? `<span class="score-highlight">${msg.body.score} pts</span>` : ''}
       <div class="inbox-actions">
         ${msg.body?.quiz_id ? `<button class="btn btn--primary btn--small btn-accept-quiz-inbox">▶ ${isChallenge ? 'Accept Challenge' : 'Start Quiz'}</button>` : ''}
+${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small btn-save-quiz-inbox">📥 Save to Library</button>` : ''}
         ${msg.type === 'chapter' && msg.body?.folder_id ? `<button class="btn btn--primary btn--small btn-accept-chapter-inbox">📥 Add to Library</button>` : ''}
         <button class="btn btn--ghost btn--small btn-inbox-dismiss">Dismiss</button>
       </div>
@@ -1755,6 +2148,17 @@ function renderInbox(messages) {
       }
     });
 
+    item.querySelector('.btn-save-quiz-inbox')?.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (msg.body?.quiz_id) {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        await importSharedQuiz(msg.body.quiz_id, msg.title, senderName);
+        btn.textContent = '✓ Saved';
+      }
+    });
+
     item.querySelector('.btn-accept-chapter-inbox')?.addEventListener('click', async e => {
       e.stopPropagation();
       if (msg.body?.folder_id) {
@@ -1766,6 +2170,71 @@ function renderInbox(messages) {
     list.appendChild(item);
   });
 }
+
+// ── SHARED BY ME ─────────────────────────────
+async function loadSharedByMe() {
+  if (!currentUser) return;
+  const list = document.getElementById('shared-by-me-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint" style="padding:0.5rem 0">Loading…</p>';
+
+  const { data, error } = await sb.from('inbox_messages')
+    .select('id, to_user_id, title, type, is_read, created_at, body, to_profile:profiles!inbox_messages_to_user_id_fkey(display_name)')
+    .eq('from_user_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error || !data?.length) {
+    list.innerHTML = '<p class="hint" style="padding:0.5rem 0;color:var(--slate)">Nothing shared yet.</p>';
+    return;
+  }
+
+  const now = Date.now();
+  const items = data.map(m => {
+    const sentAt = new Date(m.created_at).getTime();
+    const msLeft = (sentAt + 24 * 3600 * 1000) - now;
+    const expired = msLeft <= 0;
+    const hoursLeft = expired ? 0 : Math.ceil(msLeft / 3600000);
+    return { ...m, expired, hoursLeft };
+  });
+
+  list.innerHTML = '';
+  items.forEach(m => {
+    const recipientName = m.to_profile?.display_name || 'Friend';
+    const typeIcon = m.type === 'challenge' ? '⚔️' : m.type === 'chapter' ? '📁' : '📝';
+    const statusBadge = m.is_read
+      ? '<span class="shared-status shared-status--accepted">✓ Accepted</span>'
+      : m.expired
+        ? '<span class="shared-status shared-status--expired">Expired</span>'
+        : `<span class="shared-status shared-status--pending">⏱ ${m.hoursLeft}h left</span>`;
+
+    const row = document.createElement('div');
+    row.className = 'shared-by-me-row' + (m.expired && !m.is_read ? ' shared-by-me-row--expired' : '');
+    row.dataset.msgId = m.id;
+    row.innerHTML = `
+      <div class="shared-by-me-icon">${typeIcon}</div>
+      <div class="shared-by-me-info">
+        <div class="shared-by-me-title">${escHtml(m.title)}</div>
+        <div class="shared-by-me-meta">→ ${escHtml(recipientName)} · ${timeAgo(m.created_at)}</div>
+      </div>
+      <div class="shared-by-me-right">
+        ${statusBadge}
+        <button class="btn btn--ghost btn--small shared-by-me-remove" title="Remove">🗑</button>
+      </div>
+    `;
+    row.querySelector('.shared-by-me-remove').addEventListener('click', async e => {
+      e.stopPropagation();
+      await sb.from('inbox_messages').delete().eq('id', m.id);
+      row.style.opacity = '0'; row.style.transition = 'opacity .2s';
+      setTimeout(() => { row.remove(); if (!list.querySelector('.shared-by-me-row')) list.innerHTML = '<p class="hint" style="padding:0.5rem 0;color:var(--slate)">Nothing shared yet.</p>'; }, 220);
+      toast('Removed.', 'info');
+    });
+    list.appendChild(row);
+  });
+}
+
+// Wire refresh button
+document.getElementById('btn-refresh-shared-by-me')?.addEventListener('click', loadSharedByMe);
 
 function updateInboxBadge(count) {
   const badge = document.getElementById('inbox-badge');
@@ -1851,6 +2320,27 @@ function setupShareChapterModal() {
     }
   }
 }
+
+document.getElementById('btn-add-subfolder')?.addEventListener('click', async () => {
+  const name = prompt('Subfolder name:');
+  if (!name || !name.trim()) return;
+  const { data, error } = await sb.from('folders').insert({
+    user_id: currentUser.id,
+    name: name.trim(),
+    parent_id: activeFolderId
+  }).select().single();
+  if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
+  foldersCache.unshift(data);
+  renderSubfolders(activeFolderId);
+  toast('Subfolder created!', 'success');
+});
+
+// Override oldstatic: pre-select current subfolder in create view
+document.getElementById('btn-add-quiz-here')?.addEventListener('click', e => {
+  e.stopImmediatePropagation();
+  showView('create');
+  updateTargetFolderSelect();
+}, true);
 
 document.getElementById('btn-share-chapter')?.addEventListener('click', () => {
   setupShareChapterModal();
@@ -2377,6 +2867,7 @@ async function buildPublicLibrary() {
     const el = document.createElement('article');
     el.className = 'public-lib-card';
     const likeCount = likeMap[item.id] || 0;
+    const itemKind = item.type.includes('Folder') ? 'folder' : 'quiz';
     el.innerHTML = `
       <div class="public-lib-card-top">
         <span class="public-lib-type">${item.type}</span>
@@ -2386,9 +2877,34 @@ async function buildPublicLibrary() {
       <span class="public-lib-owner">👤 You · ${item.meta}</span>
       <div class="public-lib-actions">
         <button class="btn-like" data-id="${item.id}">❤ <span class="like-count">${likeCount}</span></button>
+        <button class="btn btn--ghost btn--small btn-remove-from-public">🔒 Remove</button>
       </div>
     `;
     grid.appendChild(el);
+
+    el.querySelector('.btn-remove-from-public').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      if (!confirm('Make this private again? Friends who haven\'t already added it to their own library will lose access to this shared link.')) return;
+      setLoading(btn, true, 'Removing…');
+      const { error } = await sb.from(itemKind === 'folder' ? 'folders' : 'quizzes')
+        .update({ is_public: false }).eq('id', item.id);
+      if (error) { toast('Could not update: ' + error.message, 'error'); setLoading(btn, false); return; }
+
+      // Keep local caches in sync
+      if (itemKind === 'folder') {
+        const f = foldersCache.find(f => f.id === item.id);
+        if (f) f.is_public = false;
+      } else {
+        const q = quizzesCache.find(q => q.id === item.id);
+        if (q) q.is_public = false;
+      }
+
+      el.remove();
+      if (!grid.querySelector('.public-lib-card')) {
+        if (empty) empty.style.display = 'block';
+      }
+      toast('Removed from your Public Library.', 'success');
+    });
 
     el.querySelector('.btn-like').addEventListener('click', async () => {
       const btn = el.querySelector('.btn-like');
@@ -2449,6 +2965,7 @@ async function renderGlobalSearchResults(query) {
         </div>
         <button class="btn btn--primary btn--small global-search-item-tag">${friendButtonLabel(u.id)}</button>
       `;
+      row.querySelector('.global-search-item-left').addEventListener('click', () => openFriendProfile(u));
       wireAddFriendButton(row.querySelector('button'), u.id);
       el.appendChild(row);
     });
@@ -2627,6 +3144,22 @@ document.getElementById('btn-save-quiz').addEventListener('click', e => {
   saveQuiz();
 }, true);
 
+// Create group
+['btn-create-group', 'btn-new-group'].forEach(id => document.getElementById(id)?.addEventListener('click', async () => {
+  const name = prompt('Group name (e.g. GS, MATHS, ENGLISH):');
+  if (!name || !name.trim()) return;
+  const { data, error } = await sb.from('groups').insert({
+    user_id: currentUser.id,
+    name: name.trim(),
+    sort_order: groupsCache.length
+  }).select().single();
+  if (error) { toast('Could not create group: ' + error.message, 'error'); return; }
+  groupsCache.push(data);
+  renderFolders();
+  toast('Group "' + name.trim() + '" created!', 'success');
+}));
+
+
 // Create folder
 document.getElementById('btn-create-folder').addEventListener('click', async e => {
   e.stopImmediatePropagation();
@@ -2663,7 +3196,10 @@ document.querySelectorAll('.nav-link[data-view], [data-view]').forEach(el => {
     if (view === 'profile') {
       buildPublicLibrary();
       buildActivityCalendarReal();
+      loadMyProfileStats();
     }
+    // Pomodoro / Race views are static landing pages — no data load needed.
+    // The actual Pomodoro flow is triggered from folder quiz slips.
   });
 });
 
@@ -2762,6 +3298,12 @@ gsi?.addEventListener('focus', () => renderGlobalSearchResults(gsi.value));
 
 // Profile save button (add if not present)
 const profileView = document.getElementById('view-profile');
+
+// Preview my own public profile (read-only)
+document.getElementById('btn-preview-public-profile')?.addEventListener('click', () => {
+  if (!currentUser) return;
+  openFriendProfile({ id: currentUser.id });
+});
 if (profileView && !document.getElementById('btn-save-profile')) {
   const saveBtn = document.createElement('button');
   saveBtn.id = 'btn-save-profile';
@@ -2825,3 +3367,29 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
     }
   });
 })();
+// Flashcard back button
+document.getElementById('btn-flash-back')?.addEventListener('click', () => {
+  if (activeFolderId && activeFolderName) {
+    openFolder(activeFolderId, activeFolderName);
+  } else {
+    showView('dashboard');
+  }
+});
+
+
+
+
+async function handleLogout() {
+  await sb.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  document.getElementById('app-shell').style.visibility = 'hidden';
+document.getElementById('app-shell').style.pointerEvents = 'none';
+  // ADD THIS:
+  const mobileNav = document.querySelector('.mobile-nav');
+  if (mobileNav) mobileNav.style.display = 'none';
+  const auth = document.getElementById('view-auth');
+  auth.style.display = 'flex';
+  auth.classList.add('active');
+  toast('Logged out.', 'info');
+}
