@@ -5177,3 +5177,25 @@ input[type="checkbox"] { display: none; }
   font-size: 0.75rem;
   color: #6b7280;
 }
+
+/* Subfolder card action buttons */
+.subfolder-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.subfolder-card-new:hover .subfolder-card-actions {
+  opacity: 1;
+}
+.subfolder-btn-rename,
+.subfolder-btn-delete {
+  font-size: 0.7rem;
+  padding: 2px 6px !important;
+  min-width: unset !important;
+}
+.subfolder-btn-delete:hover {
+  color: #f87171 !important;
+  border-color: #f87171 !important;
+}
