@@ -2321,6 +2321,20 @@ function setupShareChapterModal() {
   }
 }
 
+document.getElementById('btn-add-subfolder-here')?.addEventListener('click', async () => {
+  const name = prompt('New subfolder name:');
+  if (!name || !name.trim()) return;
+  const { data, error } = await sb.from('folders').insert({
+    user_id: currentUser.id,
+    name: name.trim(),
+    parent_id: activeFolderId
+  }).select().single();
+  if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
+  foldersCache.unshift(data);
+  renderSubfolders(activeFolderId);
+  toast('Subfolder created!', 'success');
+});
+
 document.getElementById('btn-add-subfolder')?.addEventListener('click', async () => {
   const name = prompt('Subfolder name:');
   if (!name || !name.trim()) return;
@@ -2804,35 +2818,81 @@ async function exportBackup() {
 }
 
 async function importBackup(raw) {
+  const progressWrap  = document.getElementById('restore-progress');
+  const progressBar   = document.getElementById('restore-progress-bar');
+  const progressLabel = document.getElementById('restore-progress-label');
+  const progressPct   = document.getElementById('restore-progress-pct');
+  const progressDetail= document.getElementById('restore-progress-detail');
+  const doBtn         = document.getElementById('btn-do-restore');
+
+  function setProgress(pct, label, detail) {
+    if (progressWrap)  progressWrap.style.display = 'block';
+    if (progressBar)   progressBar.style.width = pct + '%';
+    if (progressLabel) progressLabel.textContent = label;
+    if (progressPct)   progressPct.textContent = pct + '%';
+    if (progressDetail && detail) progressDetail.textContent = detail;
+  }
+
   try {
     const backup = JSON.parse(raw);
     if (!backup.folders || !backup.quizzes) throw new Error('Invalid backup format.');
+    if (doBtn) doBtn.disabled = true;
 
-    // Re-insert folders
-    for (const folder of backup.folders) {
+    const folders = backup.folders;
+    const quizzes = backup.quizzes;
+    const total = folders.length + quizzes.length;
+    let done = 0;
+
+    setProgress(0, 'Starting restore…', `${folders.length} folders · ${quizzes.length} quizzes`);
+
+    // Map old folder id -> new folder id (for parent_id remapping)
+    const idMap = {};
+
+    // Sort folders: parents before children (no parent_id first)
+    const sorted = [...folders].sort((a, b) => {
+      if (!a.parent_id && b.parent_id) return -1;
+      if (a.parent_id && !b.parent_id) return 1;
+      return 0;
+    });
+
+    for (const folder of sorted) {
+      const newParentId = folder.parent_id ? (idMap[folder.parent_id] || null) : null;
       const { data: newFolder } = await sb.from('folders').insert({
         user_id: currentUser.id,
         name: folder.name,
-        is_public: false
+        is_public: false,
+        parent_id: newParentId
       }).select().single();
-      if (!newFolder) continue;
 
-      // Re-insert quizzes in this folder
-      const folderQuizzes = backup.quizzes.filter(q => q.folder_id === folder.id);
-      for (const quiz of folderQuizzes) {
-        await sb.from('quizzes').insert({
-          user_id: currentUser.id,
-          folder_id: newFolder.id,
-          title: quiz.title,
-          questions: quiz.questions,
-          is_public: false
-        });
-      }
+      if (newFolder) idMap[folder.id] = newFolder.id;
+      done++;
+      const pct = Math.round((done / total) * 100);
+      setProgress(pct, `Folders: ${done}/${folders.length}`, `Created: ${folder.name}`);
     }
 
-    toast(`Backup restored: ${backup.folders.length} folders, ${backup.quizzes.length} quizzes.`, 'success');
+    // Insert quizzes
+    let qDone = 0;
+    for (const quiz of quizzes) {
+      const mappedFolderId = idMap[quiz.folder_id];
+      if (!mappedFolderId) { done++; qDone++; continue; } // skip if folder not found
+      await sb.from('quizzes').insert({
+        user_id: currentUser.id,
+        folder_id: mappedFolderId,
+        title: quiz.title,
+        questions: quiz.questions,
+        is_public: false
+      });
+      done++; qDone++;
+      const pct = Math.round((done / total) * 100);
+      setProgress(pct, `Quizzes: ${qDone}/${quizzes.length}`, `Added: ${quiz.title}`);
+    }
+
+    setProgress(100, '✅ Restore complete!', `${folders.length} folders · ${quizzes.length} quizzes imported`);
+    if (doBtn) doBtn.disabled = false;
+    toast(`Restored: ${folders.length} folders, ${quizzes.length} quizzes.`, 'success');
     await loadFolders();
   } catch (err) {
+    if (doBtn) doBtn.disabled = false;
     toast('Restore failed: ' + err.message, 'error');
   }
 }
