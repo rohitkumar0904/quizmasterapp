@@ -581,8 +581,40 @@ function renderSubfolders(parentFolderId) {
           '</div>' +
           '<div class="subfolder-card-name">' + escHtml(sub.name) + '</div>' +
           '<div class="subfolder-card-count" id="sc-count-' + sub.id + '">Loading…</div>' +
+          '<div class="subfolder-card-actions">' +
+            '<button class="btn btn--ghost btn--small subfolder-btn-rename" data-sub-id="' + sub.id + '" title="Rename">✏️</button>' +
+            '<button class="btn btn--ghost btn--small subfolder-btn-delete" data-sub-id="' + sub.id + '" title="Delete">🗑️</button>' +
+          '</div>' +
         '</div>';
-      card.addEventListener('click', () => openFolder(sub.id, sub.name, parentFolderId));
+
+      card.querySelector('.subfolder-btn-rename').addEventListener('click', async e => {
+        e.stopPropagation();
+        const newName = prompt('Rename folder:', sub.name);
+        if (!newName || !newName.trim()) return;
+        const { error } = await sb.from('folders').update({ name: newName.trim() }).eq('id', sub.id);
+        if (error) { toast('Could not rename: ' + error.message, 'error'); return; }
+        sub.name = newName.trim();
+        const nameEl = card.querySelector('.subfolder-card-name');
+        if (nameEl) nameEl.textContent = newName.trim();
+        const cached = foldersCache.find(f => f.id === sub.id);
+        if (cached) cached.name = newName.trim();
+        toast('Folder renamed!', 'success');
+      });
+
+      card.querySelector('.subfolder-btn-delete').addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm('Delete folder "' + sub.name + '"? All quizzes inside will also be deleted.')) return;
+        const { error } = await sb.from('folders').delete().eq('id', sub.id);
+        if (error) { toast('Could not delete: ' + error.message, 'error'); return; }
+        foldersCache = foldersCache.filter(f => f.id !== sub.id && f.parent_id !== sub.id);
+        card.remove();
+        toast('Folder deleted.', 'info');
+      });
+
+      card.addEventListener('click', e => {
+        if (e.target.closest('.subfolder-btn-rename, .subfolder-btn-delete')) return;
+        openFolder(sub.id, sub.name, parentFolderId);
+      });
       grid.appendChild(card);
 
       (async () => {
