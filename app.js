@@ -262,7 +262,7 @@ async function loadFolders() {
   const { data, error } = await sb.from('folders')
     .select('*')
     .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: false });
+    .order('name', { ascending: true });
   if (error) { toast('Could not load folders', 'error'); return; }
   foldersCache = data || [];
   renderFolders();
@@ -279,6 +279,7 @@ function renderFolders() {
   if (groupsCache.length === 0) {
     rootFolders.forEach(folder => renderFolderCard(folder, grid, true));
   } else {
+    // Render grouped folders
     groupsCache.forEach(group => {
       const inGroup = rootFolders.filter(f => f.group_id === group.id);
       if (!inGroup.length) return;
@@ -289,7 +290,7 @@ function renderFolders() {
       section.innerHTML =
         '<div class="folder-group-header">' +
           '<h3 class="folder-group-title">' + escHtml(group.name) + '</h3>' +
-          '<button class="btn btn--ghost btn--small btn-delete-group" data-group-id="' + group.id + '" title="Delete group">\u{1F5D1}</button>' +
+          '<button class="btn btn--ghost btn--small btn-delete-group" data-group-id="' + group.id + '" title="Delete group">\uD83D\uDDD1\uFE0F</button>' +
         '</div>' +
         '<div class="folder-group-grid" data-group-grid="' + group.id + '"></div>';
 
@@ -310,6 +311,7 @@ function renderFolders() {
       inGroup.forEach(folder => renderFolderCard(folder, groupGrid, false));
     });
 
+    // Ungrouped folders
     const ungrouped = rootFolders.filter(f => !f.group_id);
     if (ungrouped.length) {
       const section = document.createElement('div');
@@ -330,6 +332,7 @@ function renderFolders() {
 }
 
 function renderFolderCard(folder, container, insertBefore) {
+  const hasChildren = foldersCache.some(f => f.parent_id === folder.id);
   const card = document.createElement('div');
   card.className = 'folder-card' + (folder.is_pinned ? ' folder-card--pinned' : '');
   card.dataset.folderId = folder.id;
@@ -343,23 +346,25 @@ function renderFolderCard(folder, container, insertBefore) {
       '<button class="btn-pin ' + (folder.is_pinned ? 'active' : '') + '" data-item-type="folder" data-item-id="' + folder.id + '" data-item-name="' + escHtml(folder.name) + '" data-item-meta="Folder" title="' + (folder.is_pinned ? 'Unpin' : 'Pin') + ' folder">\uD83D\uDCCC</button>' +
       '<button class="btn-toggle-visibility" title="' + (folder.is_public ? 'Make Private' : 'Make Public') + '">' + (folder.is_public ? '\uD83D\uDD12 Private' : '\uD83C\uDF10 Public') + '</button>' +
     '</div>' +
-    '<span class="folder-icon">\uD83D\uDCC1</span>' +
+    '<span class="folder-icon">' + (hasChildren ? '\uD83D\uDCC2' : '\uD83D\uDCC1') + '</span>' +
     '<h3>' + escHtml(folder.name) + '</h3>' +
     '<span class="folder-count" id="folder-count-' + folder.id + '">Loading\u2026</span>' +
     (groupsCache.length ?
       '<select class="folder-group-select" title="Move to group"><option value="">\u2014 No group \u2014</option>' + groupOptions + '</select>'
       : '') +
     '<div class="folder-card-actions">' +
-      '<button class="btn btn--ghost btn--small btn-rename-folder" data-folder-id="' + folder.id + '">\u270F\uFE0F Rename</button>' +
+      '<button class="btn btn--ghost btn--small btn-add-subfolder" data-folder-id="' + folder.id + '" title="Add subfolder">\uD83D\uDCC1+</button>' +
+      '<button class="btn btn--ghost btn--small btn-rename-folder" data-folder-id="' + folder.id + '">\u270F\uFE0F</button>' +
       '<button class="btn btn--ghost btn--small btn-delete-folder" data-folder-id="' + folder.id + '">\uD83D\uDDD1\uFE0F</button>' +
     '</div>' +
     '<span class="visibility-badge ' + (folder.is_public ? 'visibility-badge--public' : '') + '" data-visibility-badge>' + (folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private') + '</span>';
 
   card.addEventListener('click', e => {
-    if (e.target.closest('.btn-pin, .btn-toggle-visibility, .btn-rename-folder, .btn-delete-folder, .folder-group-select')) return;
+    if (e.target.closest('.btn-pin, .btn-toggle-visibility, .btn-rename-folder, .btn-delete-folder, .btn-add-subfolder, .folder-group-select')) return;
     openFolder(folder.id, folder.name);
   });
 
+  // Group select
   const sel = card.querySelector('.folder-group-select');
   if (sel) {
     sel.addEventListener('change', async e => {
@@ -378,10 +383,25 @@ function renderFolderCard(folder, container, insertBefore) {
     if (error) { toast('Could not update visibility: ' + error.message, 'error'); return; }
     folder.is_public = newVal;
     const badge = card.querySelector('[data-visibility-badge]');
-    badge.textContent = folder.is_public ? '\u{1F310} Public' : '\u{1F512} Private';
+    badge.textContent = folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private';
     badge.className = 'visibility-badge' + (folder.is_public ? ' visibility-badge--public' : '');
-    card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '\u{1F512} Make Private' : '\u{1F310} Make Public';
+    card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '\uD83D\uDD12 Make Private' : '\uD83C\uDF10 Make Public';
     buildPublicLibrary();
+  });
+
+  card.querySelector('.btn-add-subfolder').addEventListener('click', async e => {
+    e.stopPropagation();
+    const subName = prompt('New subfolder name:');
+    if (!subName || !subName.trim()) return;
+    const { data: sub, error } = await sb.from('folders').insert({
+      user_id: currentUser.id,
+      name: subName.trim(),
+      parent_id: folder.id
+    }).select().single();
+    if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
+    foldersCache.unshift(sub);
+    toast('Subfolder created!', 'success');
+    renderFolders();
   });
 
   card.querySelector('.btn-rename-folder').addEventListener('click', async e => {
@@ -396,9 +416,9 @@ function renderFolderCard(folder, container, insertBefore) {
 
   card.querySelector('.btn-delete-folder').addEventListener('click', async e => {
     e.stopPropagation();
-    if (!confirm('Delete folder "' + folder.name + '"? All quizzes inside will also be deleted.')) return;
+    if (!confirm('Delete folder "' + folder.name + '"? All subfolders and quizzes inside will also be deleted.')) return;
     await sb.from('folders').delete().eq('id', folder.id);
-    foldersCache = foldersCache.filter(f => f.id !== folder.id);
+    foldersCache = foldersCache.filter(f => f.id !== folder.id && f.parent_id !== folder.id);
     card.remove();
     toast('Folder deleted.', 'info');
   });
@@ -412,20 +432,26 @@ function renderFolderCard(folder, container, insertBefore) {
   loadFolderCount(folder.id);
 }
 
-
 async function loadFolderCount(folderId) {
+  const subCount = foldersCache.filter(f => f.parent_id === folderId).length;
   const { count } = await sb.from('quizzes')
     .select('*', { count: 'exact', head: true })
     .eq('folder_id', folderId);
   const el = document.getElementById('folder-count-' + folderId);
-  if (el) el.textContent = (count || 0) + ' quiz' + (count === 1 ? '' : 'zes');
+  if (el) {
+    const parts = [];
+    if (subCount) parts.push(subCount + ' subfolder' + (subCount > 1 ? 's' : ''));
+    parts.push((count || 0) + ' quiz' + (count === 1 ? '' : 'zes'));
+    el.textContent = parts.join(' \u00B7 ');
+  }
 }
 
-async function createFolder(name, silent) {
+async function createFolder(name, silent, parentId = null) {
   if (!currentUser) return null;
   const { data, error } = await sb.from('folders').insert({
     user_id: currentUser.id,
-    name: name.trim()
+    name: name.trim(),
+    parent_id: parentId || null
   }).select().single();
   if (error) { toast('Could not create folder: ' + error.message, 'error'); return null; }
   foldersCache.unshift(data);
@@ -433,6 +459,8 @@ async function createFolder(name, silent) {
   if (!silent) toast('Folder created!', 'success');
   return data;
 }
+
+
 
 // ── CURRENT OPEN FOLDER ──────────────────────────────────────
 let activeFolderId   = null;
@@ -2321,20 +2349,6 @@ function setupShareChapterModal() {
   }
 }
 
-document.getElementById('btn-add-subfolder-here')?.addEventListener('click', async () => {
-  const name = prompt('New subfolder name:');
-  if (!name || !name.trim()) return;
-  const { data, error } = await sb.from('folders').insert({
-    user_id: currentUser.id,
-    name: name.trim(),
-    parent_id: activeFolderId
-  }).select().single();
-  if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
-  foldersCache.unshift(data);
-  renderSubfolders(activeFolderId);
-  toast('Subfolder created!', 'success');
-});
-
 document.getElementById('btn-add-subfolder')?.addEventListener('click', async () => {
   const name = prompt('Subfolder name:');
   if (!name || !name.trim()) return;
@@ -2818,81 +2832,35 @@ async function exportBackup() {
 }
 
 async function importBackup(raw) {
-  const progressWrap  = document.getElementById('restore-progress');
-  const progressBar   = document.getElementById('restore-progress-bar');
-  const progressLabel = document.getElementById('restore-progress-label');
-  const progressPct   = document.getElementById('restore-progress-pct');
-  const progressDetail= document.getElementById('restore-progress-detail');
-  const doBtn         = document.getElementById('btn-do-restore');
-
-  function setProgress(pct, label, detail) {
-    if (progressWrap)  progressWrap.style.display = 'block';
-    if (progressBar)   progressBar.style.width = pct + '%';
-    if (progressLabel) progressLabel.textContent = label;
-    if (progressPct)   progressPct.textContent = pct + '%';
-    if (progressDetail && detail) progressDetail.textContent = detail;
-  }
-
   try {
     const backup = JSON.parse(raw);
     if (!backup.folders || !backup.quizzes) throw new Error('Invalid backup format.');
-    if (doBtn) doBtn.disabled = true;
 
-    const folders = backup.folders;
-    const quizzes = backup.quizzes;
-    const total = folders.length + quizzes.length;
-    let done = 0;
-
-    setProgress(0, 'Starting restore…', `${folders.length} folders · ${quizzes.length} quizzes`);
-
-    // Map old folder id -> new folder id (for parent_id remapping)
-    const idMap = {};
-
-    // Sort folders: parents before children (no parent_id first)
-    const sorted = [...folders].sort((a, b) => {
-      if (!a.parent_id && b.parent_id) return -1;
-      if (a.parent_id && !b.parent_id) return 1;
-      return 0;
-    });
-
-    for (const folder of sorted) {
-      const newParentId = folder.parent_id ? (idMap[folder.parent_id] || null) : null;
+    // Re-insert folders
+    for (const folder of backup.folders) {
       const { data: newFolder } = await sb.from('folders').insert({
         user_id: currentUser.id,
         name: folder.name,
-        is_public: false,
-        parent_id: newParentId
-      }).select().single();
-
-      if (newFolder) idMap[folder.id] = newFolder.id;
-      done++;
-      const pct = Math.round((done / total) * 100);
-      setProgress(pct, `Folders: ${done}/${folders.length}`, `Created: ${folder.name}`);
-    }
-
-    // Insert quizzes
-    let qDone = 0;
-    for (const quiz of quizzes) {
-      const mappedFolderId = idMap[quiz.folder_id];
-      if (!mappedFolderId) { done++; qDone++; continue; } // skip if folder not found
-      await sb.from('quizzes').insert({
-        user_id: currentUser.id,
-        folder_id: mappedFolderId,
-        title: quiz.title,
-        questions: quiz.questions,
         is_public: false
-      });
-      done++; qDone++;
-      const pct = Math.round((done / total) * 100);
-      setProgress(pct, `Quizzes: ${qDone}/${quizzes.length}`, `Added: ${quiz.title}`);
+      }).select().single();
+      if (!newFolder) continue;
+
+      // Re-insert quizzes in this folder
+      const folderQuizzes = backup.quizzes.filter(q => q.folder_id === folder.id);
+      for (const quiz of folderQuizzes) {
+        await sb.from('quizzes').insert({
+          user_id: currentUser.id,
+          folder_id: newFolder.id,
+          title: quiz.title,
+          questions: quiz.questions,
+          is_public: false
+        });
+      }
     }
 
-    setProgress(100, '✅ Restore complete!', `${folders.length} folders · ${quizzes.length} quizzes imported`);
-    if (doBtn) doBtn.disabled = false;
-    toast(`Restored: ${folders.length} folders, ${quizzes.length} quizzes.`, 'success');
+    toast(`Backup restored: ${backup.folders.length} folders, ${backup.quizzes.length} quizzes.`, 'success');
     await loadFolders();
   } catch (err) {
-    if (doBtn) doBtn.disabled = false;
     toast('Restore failed: ' + err.message, 'error');
   }
 }
