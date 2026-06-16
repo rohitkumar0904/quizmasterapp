@@ -467,6 +467,56 @@ let activeFolderId   = null;
 let activeFolderName = '';
 let quizzesCache     = [];
 
+// Folder navigation path stack: [{id, name}]
+let folderPathStack = [];
+
+function buildFolderPath(folderId) {
+  // Build full path from foldersCache by walking parent_id chain
+  const path = [];
+  let current = foldersCache.find(f => f.id === folderId);
+  while (current) {
+    path.unshift({ id: current.id, name: current.name, parentId: current.parent_id });
+    current = current.parent_id ? foldersCache.find(f => f.id === current.parent_id) : null;
+  }
+  return path;
+}
+
+function renderBreadcrumb(pathArr) {
+  const nav = document.getElementById('folder-breadcrumb');
+  if (!nav) return;
+  nav.innerHTML = '';
+
+  // Root crumb
+  const rootSpan = document.createElement('span');
+  rootSpan.className = 'breadcrumb-item breadcrumb-link';
+  rootSpan.textContent = 'Root';
+  rootSpan.addEventListener('click', () => {
+    folderPathStack = [];
+    showView('dashboard');
+  });
+  nav.appendChild(rootSpan);
+
+  pathArr.forEach((crumb, idx) => {
+    const sep = document.createElement('span');
+    sep.className = 'breadcrumb-sep';
+    sep.textContent = '/';
+    nav.appendChild(sep);
+
+    const span = document.createElement('span');
+    if (idx === pathArr.length - 1) {
+      span.className = 'breadcrumb-item breadcrumb-current';
+      span.textContent = crumb.name;
+    } else {
+      span.className = 'breadcrumb-item breadcrumb-link';
+      span.textContent = crumb.name;
+      span.addEventListener('click', () => {
+        openFolder(crumb.id, crumb.name, crumb.parentId);
+      });
+    }
+    nav.appendChild(span);
+  });
+}
+
 async function openFolder(folderId, folderName, parentFolderId) {
   activeFolderId = folderId;
   activeFolderName = folderName;
@@ -490,6 +540,10 @@ async function openFolder(folderId, folderName, parentFolderId) {
     }
   }
 
+  // Build and render breadcrumb path
+  const pathArr = buildFolderPath(folderId);
+  renderBreadcrumb(pathArr);
+
   showView('folder');
   renderSubfolders(folderId);
   await loadQuizzes(folderId);
@@ -498,23 +552,55 @@ async function openFolder(folderId, folderName, parentFolderId) {
 function renderSubfolders(parentFolderId) {
   const list = document.getElementById('quiz-list');
   if (!list) return;
-  list.querySelectorAll('.subfolder-card').forEach(c => c.remove());
+
+  list.querySelectorAll('.subfolder-section, .quizzes-section-label').forEach(c => c.remove());
 
   const subs = foldersCache.filter(f => f.parent_id === parentFolderId);
-  if (!subs.length) return;
 
-  const frag = document.createDocumentFragment();
-  subs.forEach(sub => {
-    const card = document.createElement('article');
-    card.className = 'subfolder-card';
-    card.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--card,#1e1e2e);border:1px solid var(--border,#333);border-radius:10px;cursor:pointer;margin-bottom:8px;';
-    card.innerHTML = '<span style="font-size:1.4rem">\uD83D\uDCC1</span><strong>' + escHtml(sub.name) + '</strong><span style="margin-left:auto;color:#888;font-size:0.85rem">Folder -></span>';
-    card.addEventListener('click', () => openFolder(sub.id, sub.name, parentFolderId));
-    frag.appendChild(card);
-  });
-  list.insertBefore(frag, list.firstChild);
+  if (subs.length) {
+    const section = document.createElement('div');
+    section.className = 'subfolder-section';
+
+    const heading = document.createElement('h3');
+    heading.className = 'folder-section-heading';
+    heading.innerHTML = '<span class="folder-section-icon">📂</span> Subfolders';
+    section.appendChild(heading);
+
+    const grid = document.createElement('div');
+    grid.className = 'subfolder-grid';
+
+    subs.forEach(sub => {
+      const card = document.createElement('article');
+      card.className = 'subfolder-card-new';
+      card.dataset.subId = sub.id;
+      card.innerHTML =
+        '<div class="subfolder-card-inner">' +
+          '<div class="subfolder-card-icons">' +
+            '<span class="subfolder-doc-icon">📄</span>' +
+            '<span class="subfolder-folder-icon">📁</span>' +
+          '</div>' +
+          '<div class="subfolder-card-name">' + escHtml(sub.name) + '</div>' +
+          '<div class="subfolder-card-count" id="sc-count-' + sub.id + '">Loading…</div>' +
+        '</div>';
+      card.addEventListener('click', () => openFolder(sub.id, sub.name, parentFolderId));
+      grid.appendChild(card);
+
+      (async () => {
+        const { count } = await sb.from('quizzes').select('id', { count: 'exact', head: true }).eq('folder_id', sub.id);
+        const el = document.getElementById('sc-count-' + sub.id);
+        if (el) el.textContent = (count || 0) + ' quiz(zes)';
+      })();
+    });
+
+    section.appendChild(grid);
+    list.insertBefore(section, list.firstChild);
+  }
+
+  const quizLabel = document.createElement('div');
+  quizLabel.className = 'quizzes-section-label';
+  quizLabel.innerHTML = '<span class="folder-section-icon">❓</span> Quizzes in this Folder';
+  list.insertBefore(quizLabel, subs.length ? list.children[1] : list.firstChild);
 }
-
 async function loadQuizzes(folderId) {
   const { data, error } = await sb.from('quizzes')
     .select('id, title, is_public, is_pinned, created_at, questions')
