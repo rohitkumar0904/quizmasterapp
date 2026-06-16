@@ -3159,7 +3159,13 @@ async function renderGlobalSearchResults(query) {
       row.addEventListener('click', () => {
         document.getElementById('global-search-input').value = '';
         el.innerHTML = '';
-        showView(item.kind === 'folder' ? 'dashboard' : 'folder');
+        if (item.kind === 'folder') {
+          openFolder(item.id, item.name, item.parent_id || null);
+        } else {
+          const parentFolder = foldersCache.find(f => f.id === item.folder_id);
+          if (parentFolder) openFolder(parentFolder.id, parentFolder.name, parentFolder.parent_id || null);
+          else showView('folder');
+        }
       });
       el.appendChild(row);
     });
