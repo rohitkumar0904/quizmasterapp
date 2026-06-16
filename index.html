@@ -114,6 +114,18 @@
       <a href="#bookmarks" class="nav-link" data-view="bookmarks">
         <span class="nav-icon">🔖</span> Bookmarks
       </a>
+
+      <!-- ── Study Tools ── -->
+      <div class="nav-section-label">Study Tools</div>
+      <a href="#pomodoro" class="nav-link" data-view="pomodoro">
+        <span class="nav-icon">🍅</span> Pomodoro
+      </a>
+      <a href="#pomodoro-race" class="nav-link nav-link--race" data-view="pomodoro-race">
+        <span class="nav-icon">⚡</span> Race Mode
+        <span class="nav-badge nav-badge--race">NEW</span>
+      </a>
+
+      <button id="btn-create-group">📂 New Folder Group</button>
       <a href="#backup" class="nav-link" data-view="backup">
         <span class="nav-icon">💾</span> Backup
       </a>
@@ -378,6 +390,9 @@ Rules:
               <span>Shuffle Options <small>(breaks muscle memory)</small></span>
               <span class="switch"><input type="checkbox" id="toggle-shuffle-opt"><span class="switch-slider"></span></span>
             </label>
+            <p class="hint" id="shuffle-locked-hint" style="display:none">
+              🔀 Shared &amp; challenge quizzes always shuffle questions and options for fairness.
+            </p>
           </div>
 
           <div class="setup-block" id="timer-setup-block">
@@ -526,12 +541,14 @@ Rules:
     <section id="view-flashcards" class="view">
       <header class="view-header">
         <div>
+          <button class="btn-back" id="btn-flash-back">← Back to Folder</button>
           <span class="eyebrow">Revise</span>
           <h2>Flashcards</h2>
           <p class="setup-subtitle"><span id="flash-set-name"></span> — <span id="flash-total-count">0</span> questions</p>
         </div>
         <div class="flash-toolbar">
-          <button class="btn btn--ghost btn--small" id="btn-flash-shuffle">⤮ Shuffle</button>
+          <button class="btn btn--ghost btn--small" id="btn-flash-shuffle">⤮ Shuffle Cards</button>
+          <button class="btn btn--ghost btn--small" id="btn-flash-shuffle-opts">🔀 Shuffle Options</button>
           <button class="btn btn--ghost btn--small" id="btn-flash-flip-all">⇄ Flip All</button>
         </div>
       </header>
@@ -595,14 +612,16 @@ Rules:
       <!-- Friend Groups -->
       <div class="friends-section">
         <div class="section-header-row">
-          <h3 class="section-label">Study Groups</h3>
-          <button class="btn btn--ghost btn--small" id="btn-new-group">＋ New Group</button>
+          <h3 class="section-label">Study Groups <span class="badge-soon">Coming Soon</span></h3>
+          <button class="btn btn--ghost btn--small" id="btn-new-group">+ New Group</button>
         </div>
         <div class="groups-grid" id="groups-grid">
-          <article class="group-card group-card--add">
-            <span>＋</span>
-            <span>Create group</span>
-          </article>
+          <div class="groups-empty-state">
+            <span class="groups-empty-icon">👥</span>
+            <h4>Study Groups are coming soon</h4>
+            <p>Create a group with your friends, share quizzes together, and track each
+              other's progress on a shared leaderboard.</p>
+          </div>
         </div>
       </div>
 
@@ -615,6 +634,71 @@ Rules:
     </section>
 
     <!-- ===== BACKUP / EXPORT ===== -->
+    <!-- ===== POMODORO ===== -->
+    <section id="view-pomodoro" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Focus Mode</span>
+          <h2>🍅 Pomodoro</h2>
+          <p class="setup-subtitle">Study → Quiz → Break, section by section</p>
+        </div>
+      </header>
+      <div class="pomodoro-landing">
+        <div class="pomo-landing-card">
+          <div class="pomo-landing-icon">🍅</div>
+          <h3>Start a Pomodoro Session</h3>
+          <p>Pick a quiz from your library, set your study + quiz + break times, and go through it in focused timed cycles.</p>
+          <div class="pomo-landing-steps">
+            <div class="pomo-landing-step"><span>1</span>Choose a quiz from your library</div>
+            <div class="pomo-landing-step"><span>2</span>Set how many questions per section</div>
+            <div class="pomo-landing-step"><span>3</span>Study → Quiz → Break, repeat!</div>
+          </div>
+          <button class="btn btn--primary" style="width:100%;margin-top:0.5rem" onclick="startPomodoro()">🍅 Start Pomodoro</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== POMODORO RACE ===== -->
+    <section id="view-pomodoro-race" class="view">
+      <header class="view-header">
+        <div>
+          <span class="eyebrow">Multiplayer</span>
+          <h2>⚡ Race Mode</h2>
+          <p class="setup-subtitle">Compete with a friend — same quiz, same cycle, live scoreboard</p>
+        </div>
+      </header>
+      <div class="pomodoro-landing" style="flex-direction:column;align-items:center;gap:1rem">
+
+        <!-- Host card -->
+        <div class="pomo-landing-card pomo-race-landing-card" style="max-width:480px;width:100%">
+          <div class="pomo-landing-icon">🏠</div>
+          <h3>Create a Race Room</h3>
+          <p>Pick a quiz, set your cycle, toggle Race Mode ON — you'll get a code to share with your friend.</p>
+          <div class="pomo-landing-steps">
+            <div class="pomo-landing-step"><span>1</span>Click <strong>Start Pomodoro</strong> below</div>
+            <div class="pomo-landing-step"><span>2</span>Toggle <strong>⚡ Race with Friend</strong> ON</div>
+            <div class="pomo-landing-step"><span>3</span>Create room → share the 6-letter code</div>
+          </div>
+          <button class="btn btn--primary" style="width:100%;margin-top:0.5rem" onclick="startPomodoro()">🍅 Start Pomodoro</button>
+        </div>
+
+        <div style="font-weight:700;color:var(--slate);font-size:0.85rem">— OR —</div>
+
+        <!-- Friend / Join card -->
+        <div class="pomo-landing-card" style="max-width:480px;width:100%">
+          <div class="pomo-landing-icon">🔗</div>
+          <h3>Join a Friend's Race</h3>
+          <p>Got a room code from your friend? Enter it here — the quiz and settings will be loaded automatically.</p>
+          <div style="display:flex;gap:0.65rem;width:100%;margin-top:0.25rem">
+            <input type="text" id="directJoinCode" class="race-code-input" placeholder="Enter room code" maxlength="6"
+              oninput="this.value=this.value.toUpperCase()" style="flex:1;font-size:1rem">
+            <button class="btn btn--primary" onclick="raceDirectJoin()">Join →</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <section id="view-backup" class="view">
       <header class="view-header">
         <div>
@@ -668,6 +752,7 @@ Rules:
           <span class="eyebrow">Account</span>
           <h2>My Profile</h2>
         </div>
+        <button class="btn btn--ghost btn--small" id="btn-preview-public-profile">👁 Preview my public profile</button>
       </header>
 
       <div class="profile-card">
@@ -703,14 +788,14 @@ Rules:
           <span class="profile-stat-label">Day Streak</span>
         </div>
         <div class="profile-stat-card">
+          <span class="profile-stat-icon">🏆</span>
+          <span class="profile-stat-value" id="stat-best-streak">0</span>
+          <span class="profile-stat-label">Best Streak</span>
+        </div>
+        <div class="profile-stat-card">
           <span class="profile-stat-icon">⏱</span>
           <span class="profile-stat-value" id="stat-quiz-time-week">0m</span>
           <span class="profile-stat-label">Quiz Time (7d)</span>
-        </div>
-        <div class="profile-stat-card">
-          <span class="profile-stat-icon">▢</span>
-          <span class="profile-stat-value" id="stat-flash-time-week">0m</span>
-          <span class="profile-stat-label">Flashcard Time (7d)</span>
         </div>
         <div class="profile-stat-card">
           <span class="profile-stat-icon">🎯</span>
@@ -779,14 +864,25 @@ Rules:
       </header>
 
       <div class="inbox-list" id="inbox-list">
-
         <!-- Empty state (hidden by default) -->
         <div class="inbox-empty" id="inbox-empty" style="display:none">
           <span class="inbox-empty-icon">📭</span>
           <h3>All caught up!</h3>
           <p>No new quizzes or challenges from friends yet.</p>
+          <p class="inbox-expire-note">⏱ Unaccepted shared items are automatically removed after 24 hours.</p>
         </div>
+      </div>
 
+      <!-- Shared By Me section -->
+      <div class="shared-by-me-section">
+        <div class="section-header-row">
+          <h3 class="section-label">📤 Shared by Me</h3>
+          <button class="btn btn--ghost btn--small" id="btn-refresh-shared-by-me">↺ Refresh</button>
+        </div>
+        <p class="shared-by-me-hint">Items you shared with friends. Unaccepted items expire after 24 hrs and are auto-removed.</p>
+        <div id="shared-by-me-list" class="shared-by-me-list">
+          <p class="hint" style="padding:0.5rem 0">Loading…</p>
+        </div>
       </div>
     </section>
 
@@ -989,40 +1085,57 @@ Rules:
       <div>
         <h3 id="friend-profile-name">Friend</h3>
         <span class="friend-rollno" id="friend-profile-rollno"></span>
+        <p class="profile-joined" id="friend-profile-joined"></p>
       </div>
     </div>
 
-    <div class="profile-stats-grid" style="margin-top:1rem">
-      <div class="profile-stat-card">
-        <span class="profile-stat-icon">📚</span>
-        <span class="profile-stat-value" id="friend-stat-total-quizzes">0</span>
-        <span class="profile-stat-label">Quizzes Attempted</span>
-      </div>
-      <div class="profile-stat-card">
-        <span class="profile-stat-icon">🎯</span>
-        <span class="profile-stat-value" id="friend-stat-avg-accuracy">0%</span>
-        <span class="profile-stat-label">Avg. Accuracy</span>
-      </div>
-    </div>
+    <p class="hint" id="friend-profile-private-msg" style="display:none">
+      🔒 This profile is private.
+    </p>
 
-    <div class="profile-section">
-      <h3 class="section-label">Activity Calendar</h3>
-      <div class="contribution-calendar-wrap">
-        <div class="contribution-months" id="friend-contribution-months"></div>
-        <div class="contribution-body">
-          <div class="contribution-day-labels">
-            <span>Mon</span><span>Wed</span><span>Fri</span>
-          </div>
-          <div class="contribution-grid" id="friend-contribution-grid"></div>
+    <div id="friend-profile-body">
+      <div class="profile-stats-grid" style="margin-top:1rem">
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">📚</span>
+          <span class="profile-stat-value" id="friend-stat-total-quizzes">0</span>
+          <span class="profile-stat-label">Quizzes Attempted</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">🎯</span>
+          <span class="profile-stat-value" id="friend-stat-avg-accuracy">0%</span>
+          <span class="profile-stat-label">Avg. Accuracy</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">🔥</span>
+          <span class="profile-stat-value" id="friend-stat-streak">0</span>
+          <span class="profile-stat-label">Day Streak</span>
+        </div>
+        <div class="profile-stat-card">
+          <span class="profile-stat-icon">🏆</span>
+          <span class="profile-stat-value" id="friend-stat-best-streak">0</span>
+          <span class="profile-stat-label">Best Streak</span>
         </div>
       </div>
-    </div>
 
-    <h3 class="section-label" style="margin-top:1rem">📤 Public Library</h3>
-    <div class="public-library-grid" id="friend-public-library-grid"></div>
-    <p class="public-library-empty" id="friend-public-library-empty" style="display:none">
-      This friend hasn't made anything public yet.
-    </p>
+      <div class="profile-section">
+        <h3 class="section-label">Activity Calendar</h3>
+        <div class="contribution-calendar-wrap">
+          <div class="contribution-months" id="friend-contribution-months"></div>
+          <div class="contribution-body">
+            <div class="contribution-day-labels">
+              <span>Mon</span><span>Wed</span><span>Fri</span>
+            </div>
+            <div class="contribution-grid" id="friend-contribution-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="section-label" style="margin-top:1rem">📤 Public Library</h3>
+      <div class="public-library-grid" id="friend-public-library-grid"></div>
+      <p class="public-library-empty" id="friend-public-library-empty" style="display:none">
+        This friend hasn't made anything public yet.
+      </p>
+    </div>
 
     <button class="btn btn--ghost btn--block" id="btn-close-friend-profile" style="margin-top:1rem">Close</button>
   </div>
@@ -1083,38 +1196,16 @@ Rules:
   </div>
 </div>
 
-<!-- ===== NEW GROUP MODAL ===== -->
-<div class="modal" id="modal-group">
-  <div class="modal-card">
-    <h3>Create Study Group</h3>
-    <label>Group Name
-      <input type="text" id="new-group-name" placeholder="e.g. SSC CGL Batch 2025">
-    </label>
-    <label>Add Members
-      <div class="friend-pick-list friend-pick-list--compact">
-        <label class="friend-pick-item">
-          <input type="checkbox">
-          <div class="friend-avatar friend-avatar--sm">AK</div>
-          <span>Aakash Kumar</span>
-        </label>
-        <label class="friend-pick-item">
-          <input type="checkbox">
-          <div class="friend-avatar friend-avatar--sm">RS</div>
-          <span>Rahul Sharma</span>
-        </label>
-        <label class="friend-pick-item">
-          <input type="checkbox">
-          <div class="friend-avatar friend-avatar--sm">NP</div>
-          <span>Neha Pandey</span>
-        </label>
-      </div>
-    </label>
-    <div class="modal-actions">
-      <button class="btn btn--ghost" id="btn-cancel-group">Cancel</button>
-      <button class="btn btn--primary" id="btn-create-group">Create Group</button>
-    </div>
-  </div>
-</div>
+<!-- ===== NEW GROUP MODAL (placeholder for future Study Groups feature) ===== -->
+<!--
+  TODO: Study Groups — when ready to build:
+  - study_groups table (id, name, owner_id, created_at)
+  - group_members table (group_id, user_id, role, joined_at)
+  - This modal: group name input + friend-pick-list (populate from
+    friendsCache, same pattern as #share-friend-pick-list)
+  - Wire #btn-new-group (remove disabled attr in index.html) + #btn-create-group
+-->
+
 
 <!-- ===== SAVE TO FOLDER MODAL (for received quizzes/chapters) ===== -->
 <div class="modal" id="modal-save-to-folder">
@@ -1233,9 +1324,13 @@ Rules:
 
 <!-- Supabase client (must load first) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<!-- Static UI logic (defines renderPlayer, quizState, darkMode, pins, etc.) -->
+<!-- Static UI logic -->
 <script src="oldstatic.js"></script>
-<!-- Supabase integration (overrides static handlers with real backend) -->
+<!-- Supabase integration -->
 <script src="app.js"></script>
+<!-- Pomodoro learning flow -->
+<script src="pomodoro.js"></script>
+<!-- Pomodoro race multiplayer -->
+<script src="pomodoro-race.js"></script>
 </body>
 </html>
