@@ -211,6 +211,7 @@
           <h2 id="folder-title">SSC CGL — Tier 1</h2>
         </div>
         <div class="folder-header-actions">
+          <button class="btn btn--ghost btn--small" id="btn-add-subfolder-here">📁+ Subfolder</button>
           <button class="btn btn--ghost btn--small" id="btn-share-chapter">📤 Share Chapter</button>
           <button class="btn btn--primary" id="btn-add-quiz-here">＋ Add Quiz</button>
         </div>
@@ -738,6 +739,16 @@ Rules:
           <div class="backup-restore-actions">
             <button class="btn btn--ghost" id="btn-preview-restore">Preview</button>
             <button class="btn btn--primary" id="btn-do-restore">Restore Data</button>
+          </div>
+          <div id="restore-progress" style="display:none;margin-top:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span id="restore-progress-label" style="font-size:0.9rem;color:var(--text-muted,#888)">Preparing…</span>
+              <span id="restore-progress-pct" style="font-size:0.9rem;font-weight:600">0%</span>
+            </div>
+            <div style="background:var(--border,#333);border-radius:99px;height:8px;overflow:hidden">
+              <div id="restore-progress-bar" style="height:100%;width:0%;background:var(--accent,#7c3aed);border-radius:99px;transition:width 0.3s ease"></div>
+            </div>
+            <p id="restore-progress-detail" style="font-size:0.8rem;color:var(--text-muted,#888);margin-top:6px"></p>
           </div>
           <p class="hint" style="margin-top:0.75rem">⚠️ Restoring will merge data. Existing quizzes with same ID will be overwritten.</p>
         </div>
