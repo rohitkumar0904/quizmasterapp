@@ -832,8 +832,16 @@ Rules:
         <div class="profile-top">
           <div class="profile-avatar" id="profile-avatar"></div>
           <div class="profile-info">
-            <h3 id="profile-display-name"></h3>
-            <span class="rollno-value" id="profile-rollno"></span>
+            <div class="name-edit-wrap" style="display:flex;align-items:center;gap:6px;">
+              <h3 id="profile-display-name" style="margin:0;"></h3>
+              <input type="text" id="profile-display-name-input" placeholder="Your name" style="display:none;font-size:1rem;padding:3px 8px;border:1px solid var(--border,#ccc);border-radius:6px;max-width:200px;">
+              <button type="button" id="btn-edit-displayname" title="Edit name" style="font-size:0.85rem;cursor:pointer;background:none;border:none;opacity:0.6;padding:0;">✏️</button>
+            </div>
+            <div class="rollno-edit-wrap" style="display:flex;align-items:center;gap:6px;">
+              <span class="rollno-value" id="profile-rollno"></span>
+              <input type="text" id="profile-rollno-input" placeholder="e.g. QM-1024" style="display:none;font-size:0.85rem;padding:3px 8px;border:1px solid var(--border,#ccc);border-radius:6px;max-width:140px;">
+              <button type="button" id="btn-edit-rollno" title="Edit roll number" style="font-size:0.85rem;cursor:pointer;background:none;border:none;opacity:0.6;padding:0;">✏️</button>
+            </div>
             <p class="profile-joined" id="profile-joined"></p>
           </div>
           <div class="profile-visibility">
