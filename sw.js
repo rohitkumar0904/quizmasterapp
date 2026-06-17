@@ -1,12 +1,11 @@
 /* =============================================
-   sw.js — QuizMaster Pro Service Worker
-   Caches app shell for offline use.
-   ============================================= */
+   QuizMaster Pro Service Worker
+   Offline support + auto updates
+============================================= */
 
-const CACHE_NAME   = 'qm-pro-v1';
-const CACHE_STATIC = 'qm-static-v1';
+const CACHE_STATIC = 'qm-static-v2';
+const CACHE_DYNAMIC = 'qm-dynamic-v2';
 
-// Core app shell — always cached
 const SHELL_URLS = [
   '/',
   '/index.html',
@@ -17,10 +16,10 @@ const SHELL_URLS = [
   '/style.css',
   '/manifest.json',
   '/icon-192.png',
-  '/icon-512.png',
+  '/icon-512.png'
 ];
 
-// ── Install: cache app shell ──────────────────
+/* Install */
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_STATIC)
@@ -29,60 +28,66 @@ self.addEventListener('install', event => {
   );
 });
 
-// ── Activate: clean old caches ────────────────
+/* Activate */
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k !== CACHE_STATIC && k !== CACHE_NAME)
-          .map(k => caches.delete(k))
+          .filter(key => ![CACHE_STATIC, CACHE_DYNAMIC].includes(key))
+          .map(key => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   );
 });
 
-// ── Fetch strategy ────────────────────────────
-// App shell   → Cache first, then network
-// Supabase    → Network only (always fresh data)
-// Google Fonts → Network first, cache fallback
-// Everything else → Network first, cache fallback
-
+/* Fetch */
 self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-
-  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
-  // Supabase API — always network, never cache
-  if (url.hostname.includes('supabase.co')) return;
+  const url = new URL(event.request.url);
 
-  // App shell files — cache first
-  if (SHELL_URLS.some(u => url.pathname === u || url.pathname.endsWith(u.replace('/',''))) ) {
+  /* Supabase: always network */
+  if (url.hostname.includes('supabase.co')) {
+    return;
+  }
+
+  /* App shell: stale-while-revalidate */
+  if (SHELL_URLS.includes(url.pathname)) {
     event.respondWith(
       caches.match(event.request).then(cached => {
-        if (cached) return cached;
-        return fetch(event.request).then(res => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE_STATIC).then(c => c.put(event.request, clone));
-          }
-          return res;
-        });
+        const networkFetch = fetch(event.request)
+          .then(response => {
+            if (response && response.status === 200) {
+              caches.open(CACHE_STATIC).then(cache => {
+                cache.put(event.request, response.clone());
+              });
+            }
+            return response;
+          })
+          .catch(() => cached);
+
+        return cached || networkFetch;
       })
     );
     return;
   }
 
-  // Everything else — network first, cache fallback
+  /* Everything else: network first */
   event.respondWith(
     fetch(event.request)
-      .then(res => {
-        if (res && res.status === 200 && res.type !== 'opaque') {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+      .then(response => {
+        if (
+          response &&
+          response.status === 200 &&
+          response.type !== 'opaque'
+        ) {
+          caches.open(CACHE_DYNAMIC).then(cache => {
+            cache.put(event.request, response.clone());
+          });
         }
-        return res;
+
+        return response;
       })
       .catch(() => caches.match(event.request))
   );
