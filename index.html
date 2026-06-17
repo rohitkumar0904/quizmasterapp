@@ -644,6 +644,10 @@ Rules:
       <div class="history-list" id="history-list">
       </div>
       <p class="hint" id="history-empty" style="display:none">No quiz attempts yet. Take a quiz to see your history here.</p>
+
+      <h3 class="section-subhead">🏁 Race Results</h3>
+      <div id="race-history-list"></div>
+      <p class="hint" id="race-history-empty" style="display:none">No races yet. Challenge a friend to a Pomodoro race!</p>
     </section>
 
     <!-- ===== FRIENDS ===== -->
@@ -692,6 +696,20 @@ Rules:
       <div class="friends-section">
         <h3 class="section-label">My Friends <span class="count-chip" id="friends-count">0</span></h3>
         <div class="friend-list" id="friends-list">
+        </div>
+      </div>
+
+      <!-- ── Chat Panel (slides in from right) ── -->
+      <div id="chat-panel" class="chat-panel">
+        <div id="chat-panel-header" class="chat-panel-header">
+          <span id="chat-panel-title" class="chat-panel-title">Chat</span>
+          <button class="chat-panel-close" onclick="closeChat()" aria-label="Close chat">✕</button>
+        </div>
+        <div id="chat-messages-list" class="chat-messages-list"></div>
+        <div id="chat-input-row" class="chat-input-row">
+          <textarea id="chat-input" class="chat-input" rows="1" placeholder="Type a message…"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+          <button class="btn btn--primary chat-send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
     </section>
