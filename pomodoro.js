@@ -377,6 +377,7 @@ function _buildFlashCard(q, displayNum, cardIdx) {
           <div class="flash-card-head">
             <span class="flash-num">${displayNum}</span>
             <div class="flash-actions">
+              <button class="icon-btn pomo-edit-btn" title="Edit question" data-card-idx="${cardIdx}">✏️</button>
               <button class="icon-btn pomo-search-btn" title="Search online" data-q="${escHtml(q.question)}">🔍</button>
             </div>
           </div>
@@ -387,6 +388,9 @@ function _buildFlashCard(q, displayNum, cardIdx) {
         <div class="flash-card-face flash-card-back">
           <div class="flash-card-head">
             <span class="flash-num">${displayNum}</span>
+            <div class="flash-actions">
+              <button class="icon-btn pomo-edit-btn" title="Edit question" data-card-idx="${cardIdx}">✏️</button>
+            </div>
           </div>
           <p class="flash-answer-line">✓ ${escHtml(correctOpt)}</p>
           ${q.explanation ? `<p class="flash-explanation-line">${escHtml(q.explanation)}</p>` : ''}
@@ -432,6 +436,14 @@ function enterPomodoroStudy() {
       btn.addEventListener('click', e => {
         e.stopPropagation();
         window.open('https://www.google.com/search?q=' + encodeURIComponent(btn.dataset.q || ''), '_blank');
+      });
+    });
+    // Edit buttons
+    body.querySelectorAll('.pomo-edit-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const cardIdx = parseInt(btn.dataset.cardIdx);
+        _openPomoEdit(cardIdx, renderCards, _attachCardEvents);
       });
     });
   };
@@ -624,4 +636,144 @@ function finishPomodoro(){
         <button class="btn btn--ghost" onclick="document.getElementById('pomodoroShell')?.remove();startPomodoro()">🔄 New Session</button>
       </div>
     </div>`;
+}
+// ── POMODORO FLASHCARD EDITOR ─────────────────
+// Opens the same editor as app.js's openFlashcardEditor but
+// syncs changes back into pomodoroState.currentQuestions and
+// also updates activeQuizQuestions + saves to Supabase.
+function _openPomoEdit(cardIdx, renderCards, attachEvents) {
+  const q = pomodoroState.currentQuestions[cardIdx];
+  if (!q) return;
+
+  document.getElementById('modal-flashcard-edit')?.remove();
+  const m = document.createElement('div');
+  m.className = 'modal active';
+  m.id = 'modal-flashcard-edit';
+
+  const numOptions = Array.isArray(q.options) ? q.options.length : 4;
+  const optionsHTML = Array.from({ length: numOptions }, (_, i) => `
+    <div class="fce-option-row">
+      <label class="fce-option-label">
+        <input type="radio" name="fce-correct" value="${i}" ${q.correctIndex === i ? 'checked' : ''}>
+        <span class="fce-option-letter">${String.fromCharCode(65 + i)}</span>
+      </label>
+      <input type="text" class="input fce-option-input" data-opt-idx="${i}"
+        value="${escHtml(q.options?.[i] || '')}" placeholder="Option ${String.fromCharCode(65 + i)}">
+      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option" ${numOptions <= 2 ? 'disabled' : ''}>✕</button>
+    </div>`).join('');
+
+  m.innerHTML = `
+    <div class="modal-card" style="max-width:520px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <h3 style="margin:0">✏️ Edit Question</h3>
+        <button class="btn btn--ghost btn--small" onclick="document.getElementById('modal-flashcard-edit')?.remove()">✕</button>
+      </div>
+      <label class="label">Question</label>
+      <textarea id="fce-question" class="input" rows="3"
+        style="width:100%;resize:vertical;margin-bottom:1rem">${escHtml(q.question || '')}</textarea>
+      <label class="label">Options <small style="color:var(--slate)">(● = correct answer)</small></label>
+      <div id="fce-options-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">
+        ${optionsHTML}
+      </div>
+      <button class="btn btn--ghost btn--small" id="fce-add-opt" style="margin-bottom:1rem">＋ Add Option</button>
+      <label class="label">Explanation <small style="color:var(--slate)">(optional)</small></label>
+      <textarea id="fce-explanation" class="input" rows="2"
+        style="width:100%;resize:vertical;margin-bottom:1.25rem">${escHtml(q.explanation || '')}</textarea>
+      <div class="modal-actions">
+        <button class="btn btn--ghost" onclick="document.getElementById('modal-flashcard-edit')?.remove()">Cancel</button>
+        <button class="btn btn--primary" id="fce-save-btn">Save Changes</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+
+  // Add option
+  document.getElementById('fce-add-opt').addEventListener('click', () => {
+    const list = document.getElementById('fce-options-list');
+    const count = list.querySelectorAll('.fce-option-row').length;
+    if (count >= 6) { toast('Max 6 options allowed', 'info'); return; }
+    const idx = count;
+    const row = document.createElement('div');
+    row.className = 'fce-option-row';
+    row.innerHTML = `
+      <label class="fce-option-label">
+        <input type="radio" name="fce-correct" value="${idx}">
+        <span class="fce-option-letter">${String.fromCharCode(65 + idx)}</span>
+      </label>
+      <input type="text" class="input fce-option-input" data-opt-idx="${idx}" placeholder="Option ${String.fromCharCode(65 + idx)}">
+      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option">✕</button>`;
+    list.appendChild(row);
+    _bindPomoRemoveButtons();
+    row.querySelector('input[type=text]').focus();
+  });
+
+  _bindPomoRemoveButtons();
+
+  // Save
+  document.getElementById('fce-save-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('fce-save-btn');
+    const questionText = document.getElementById('fce-question').value.trim();
+    if (!questionText) { toast('Question cannot be empty', 'error'); return; }
+
+    const optionInputs = [...document.querySelectorAll('#fce-options-list .fce-option-input')];
+    const options = optionInputs.map(inp => inp.value.trim());
+    if (options.some(o => !o)) { toast('All options must have text', 'error'); return; }
+    if (options.length < 2)   { toast('At least 2 options required', 'error'); return; }
+
+    const correctRadio = document.querySelector('input[name="fce-correct"]:checked');
+    const correctIndex = correctRadio ? parseInt(correctRadio.value) : 0;
+    const explanation  = document.getElementById('fce-explanation').value.trim();
+
+    btn.textContent = '⏳ Saving…'; btn.disabled = true;
+
+    const updated = { ...q, question: questionText, options, correctIndex, explanation };
+
+    // Update pomodoroState.currentQuestions
+    pomodoroState.currentQuestions[cardIdx] = updated;
+
+    // Also update activeQuizQuestions in app.js (same question by reference match)
+    if (typeof activeQuizQuestions !== 'undefined') {
+      const aqIdx = activeQuizQuestions.findIndex(aq =>
+        aq.question === q.question && JSON.stringify(aq.options) === JSON.stringify(q.options));
+      if (aqIdx >= 0) activeQuizQuestions[aqIdx] = updated;
+    }
+
+    // Save to Supabase via app.js helper if available
+    let saved = true;
+    if (typeof _saveQuizQuestions === 'function') {
+      saved = await _saveQuizQuestions();
+    }
+
+    if (saved) {
+      m.remove();
+      // Re-render flashcard grid
+      const grid = document.getElementById('pomoFlashGrid');
+      if (grid && renderCards && attachEvents) {
+        grid.innerHTML = renderCards();
+        attachEvents();
+      }
+      toast('Question updated!', 'success');
+    } else {
+      pomodoroState.currentQuestions[cardIdx] = q; // revert
+      btn.textContent = 'Save Changes'; btn.disabled = false;
+    }
+  });
+}
+
+function _bindPomoRemoveButtons() {
+  document.querySelectorAll('.fce-remove-opt').forEach(btn => {
+    btn.onclick = () => {
+      const list = document.getElementById('fce-options-list');
+      const rows = list.querySelectorAll('.fce-option-row');
+      if (rows.length <= 2) { toast('At least 2 options required', 'info'); return; }
+      btn.closest('.fce-option-row').remove();
+      list.querySelectorAll('.fce-option-row').forEach((row, i) => {
+        row.querySelector('.fce-option-letter').textContent = String.fromCharCode(65 + i);
+        row.querySelector('input[type=radio]').value = i;
+        row.querySelector('input[type=text]').dataset.optIdx = i;
+        row.querySelector('input[type=text]').placeholder = `Option ${String.fromCharCode(65 + i)}`;
+        const rb = row.querySelector('.fce-remove-opt');
+        if (rb) rb.disabled = list.querySelectorAll('.fce-option-row').length <= 2;
+      });
+    };
+  });
 }
