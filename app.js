@@ -3123,13 +3123,22 @@ document.getElementById('flash-filter-bar')?.addEventListener('click', e => {
 // ── BACKUP ────────────────────────────────────────────────────
 async function exportBackup() {
   if (!currentUser) return;
-  const [{ data: folders }, { data: quizzes }, { data: attempts }, { data: notes }] = await Promise.all([
+  const [{ data: groups }, { data: folders }, { data: quizzes }, { data: attempts }, { data: notes }] = await Promise.all([
+    sb.from('groups').select('*').eq('user_id', currentUser.id).order('sort_order', { ascending: true }),
     sb.from('folders').select('*').eq('user_id', currentUser.id),
     sb.from('quizzes').select('*').eq('user_id', currentUser.id),
     sb.from('quiz_attempts').select('*').eq('user_id', currentUser.id),
     sb.from('notes').select('*').eq('user_id', currentUser.id)
   ]);
-  const backup = { folders, quizzes, attempts, notes, exportedAt: new Date().toISOString(), version: 1 };
+  const backup = {
+    groups,
+    folders,
+    quizzes,
+    attempts,
+    notes,
+    exportedAt: new Date().toISOString(),
+    version: 2
+  };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
@@ -3140,36 +3149,112 @@ async function exportBackup() {
 }
 
 async function importBackup(raw) {
+  // Progress bar helpers
+  const progWrap   = document.getElementById('restore-progress');
+  const progLabel  = document.getElementById('restore-progress-label');
+  const progPct    = document.getElementById('restore-progress-pct');
+  const progBar    = document.getElementById('restore-progress-bar');
+  const progDetail = document.getElementById('restore-progress-detail');
+  const setProgress = (pct, label, detail = '') => {
+    if (progWrap)   progWrap.style.display = 'block';
+    if (progBar)    progBar.style.width = pct + '%';
+    if (progPct)    progPct.textContent  = pct + '%';
+    if (progLabel)  progLabel.textContent = label;
+    if (progDetail) progDetail.textContent = detail;
+  };
+  const hideProgress = () => { if (progWrap) progWrap.style.display = 'none'; };
+
   try {
     const backup = JSON.parse(raw);
-    if (!backup.folders || !backup.quizzes) throw new Error('Invalid backup format.');
+    if (!backup.quizzes) throw new Error('Invalid backup format — quizzes missing.');
 
-    // Re-insert folders
-    for (const folder of backup.folders) {
-      const { data: newFolder } = await sb.from('folders').insert({
-        user_id: currentUser.id,
-        name: folder.name,
-        is_public: false
+    const groups  = backup.groups  || [];
+    const folders = backup.folders || [];
+    const quizzes = backup.quizzes || [];
+    const total   = groups.length + folders.length + quizzes.length || 1;
+    let done = 0;
+    const tick = (label, detail) => {
+      done++;
+      setProgress(Math.round((done / total) * 100), label, detail);
+    };
+
+    // ── Step 1: Groups ───────────────────────────────────────────
+    const groupIdMap = {};
+    setProgress(0, 'Creating groups…');
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const { data: ng } = await sb.from('groups').insert({
+        user_id:    currentUser.id,
+        name:       g.name,
+        sort_order: i
       }).select().single();
-      if (!newFolder) continue;
+      if (ng) groupIdMap[g.id] = ng.id;
+      tick('Creating groups…', g.name);
+    }
 
-      // Re-insert quizzes in this folder
-      const folderQuizzes = backup.quizzes.filter(q => q.folder_id === folder.id);
-      for (const quiz of folderQuizzes) {
-        await sb.from('quizzes').insert({
-          user_id: currentUser.id,
-          folder_id: newFolder.id,
-          title: quiz.title,
-          questions: quiz.questions,
+    // ── Step 2: Root folders ─────────────────────────────────────
+    const folderIdMap = {};
+    const rootFolders = folders.filter(f => !f.parent_id);
+    setProgress(Math.round((done / total) * 100), 'Creating folders…');
+    for (const f of rootFolders) {
+      const newGroupId = f.group_id ? groupIdMap[f.group_id] : null;
+      const { data: nf } = await sb.from('folders').insert({
+        user_id:   currentUser.id,
+        name:      f.name,
+        group_id:  newGroupId || null,
+        is_pinned: f.is_pinned || false,
+        is_public: false,
+        parent_id: null
+      }).select().single();
+      if (nf) folderIdMap[f.id] = nf.id;
+      tick('Creating folders…', f.name);
+    }
+
+    // ── Step 3: Subfolders (up to 4 levels deep) ─────────────────
+    const subFolders = folders.filter(f => f.parent_id);
+    for (let depth = 0; depth < 4; depth++) {
+      for (const f of subFolders) {
+        if (folderIdMap[f.id]) continue;
+        const newParentId = folderIdMap[f.parent_id];
+        if (!newParentId) continue;
+        const { data: nf } = await sb.from('folders').insert({
+          user_id:   currentUser.id,
+          name:      f.name,
+          parent_id: newParentId,
+          is_pinned: f.is_pinned || false,
           is_public: false
-        });
+        }).select().single();
+        if (nf) folderIdMap[f.id] = nf.id;
+        tick('Creating subfolders…', f.name);
       }
     }
 
-    toast(`Backup restored: ${backup.folders.length} folders, ${backup.quizzes.length} quizzes.`, 'success');
+    // ── Step 4: Quizzes ──────────────────────────────────────────
+    let quizCount = 0;
+    for (const q of quizzes) {
+      const newFolderId = q.folder_id ? folderIdMap[q.folder_id] : null;
+      if (q.folder_id && !newFolderId) { tick('Importing quizzes…', q.title + ' (skipped)'); continue; }
+      const { error } = await sb.from('quizzes').insert({
+        user_id:   currentUser.id,
+        folder_id: newFolderId || null,
+        title:     q.title,
+        questions: q.questions,
+        is_pinned: q.is_pinned || false,
+        is_public: false
+      });
+      if (!error) quizCount++;
+      tick('Importing quizzes…', q.title);
+    }
+
+    setProgress(100, 'Done!');
+    const gCount = Object.keys(groupIdMap).length;
+    const fCount = Object.keys(folderIdMap).length;
+    toast(`Import done ✓  ${gCount} groups · ${fCount} folders · ${quizCount} quizzes added.`, 'success');
     await loadFolders();
+    setTimeout(hideProgress, 3000);
   } catch (err) {
-    toast('Restore failed: ' + err.message, 'error');
+    hideProgress();
+    toast('Import failed: ' + err.message, 'error');
   }
 }
 
