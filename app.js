@@ -2478,46 +2478,51 @@ function updateInboxBadge(count) {
 }
 
 async function importSharedChapter(folderId, folderName) {
-  // Collect all folder IDs in the shared chapter tree (BFS via DB)
-  const allFolderIds = [folderId];
-  const queue = [folderId];
+  // BFS: fetch entire folder tree, preserving structure
+  // srcFolderIdToNewId maps original folder id -> newly created folder id
+  const srcFolderIdToNewId = {};
+  const queue = [{ srcId: folderId, parentNewId: null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
+  let totalQuizzes = 0;
+
   while (queue.length) {
-    const curr = queue.shift();
-    const { data: children } = await sb.from('folders').select('id').eq('parent_id', curr);
-    (children || []).forEach(f => { allFolderIds.push(f.id); queue.push(f.id); });
+    const { srcId, parentNewId, name } = queue.shift();
+
+    // Create corresponding folder for current user
+    const { data: newFolder, error: fErr } = await sb.from('folders').insert({
+      user_id: currentUser.id,
+      name,
+      parent_id: parentNewId,
+      is_public: false
+    }).select().single();
+    if (fErr || !newFolder) { toast('Could not create folder "' + name + '".', 'error'); return; }
+    srcFolderIdToNewId[srcId] = newFolder.id;
+    foldersCache.unshift(newFolder);
+
+    // Copy quizzes in this folder
+    const { data: quizzes } = await sb.from('quizzes').select('title, questions').eq('folder_id', srcId);
+    for (const quiz of (quizzes || [])) {
+      await sb.from('quizzes').insert({
+        user_id: currentUser.id,
+        folder_id: newFolder.id,
+        title: quiz.title,
+        questions: quiz.questions,
+        is_public: false
+      });
+      totalQuizzes++;
+    }
+
+    // Enqueue child folders
+    const { data: children } = await sb.from('folders').select('id, name').eq('parent_id', srcId);
+    (children || []).forEach(c => queue.push({ srcId: c.id, parentNewId: newFolder.id, name: c.name }));
   }
 
-  // Fetch all quizzes across the entire folder tree
-  const { data: srcQuizzes, error } = await sb.from('quizzes')
-    .select('title, questions, folder_id')
-    .in('folder_id', allFolderIds);
-  if (error) { toast('Could not load chapter: ' + error.message, 'error'); console.error(error); return; }
-  console.log('importSharedChapter: found', srcQuizzes?.length, 'quizzes across', allFolderIds.length, 'folders');
-  if (!srcQuizzes || srcQuizzes.length === 0) {
+  if (totalQuizzes === 0) {
     toast('That chapter has no quizzes (or is not shared publicly yet).', 'error');
     return;
   }
 
-  const { data: newFolder, error: fErr } = await sb.from('folders').insert({
-    user_id: currentUser.id,
-    name: (folderName || 'Shared Chapter') + ' (shared)',
-    is_public: false
-  }).select().single();
-  if (fErr || !newFolder) { toast('Could not import chapter.', 'error'); return; }
-
-  for (const quiz of srcQuizzes) {
-    await sb.from('quizzes').insert({
-      user_id: currentUser.id,
-      folder_id: newFolder.id,
-      title: quiz.title,
-      questions: quiz.questions,
-      is_public: false
-    });
-  }
-
-  foldersCache.unshift(newFolder);
   if (typeof renderFolders === 'function') renderFolders();
-  toast(`"${newFolder.name}" added to your library!`, 'success');
+  toast(`"${(folderName || 'Chapter') + ' (shared)'}" added to your library! (${totalQuizzes} quizzes)`, 'success');
 }
 
 // ── SHARE CHAPTER MODAL (real data) ─────────────────────────────
