@@ -611,27 +611,17 @@ async function openFolder(folderId, folderName, parentFolderId) {
   renderBreadcrumb(pathArr);
 
   showView('folder');
-  await renderSubfolders(folderId);
+  renderSubfolders(folderId);
   await loadQuizzes(folderId);
 }
 
-async function renderSubfolders(parentFolderId) {
+function renderSubfolders(parentFolderId) {
   const list = document.getElementById('quiz-list');
   if (!list) return;
 
   list.querySelectorAll('.subfolder-section, .quizzes-section-label').forEach(c => c.remove());
 
-  // Use cache for own folders; fetch from DB for friend/public folders
-  let subs = foldersCache.filter(f => f.parent_id === parentFolderId);
-  const parentInCache = foldersCache.find(f => f.id === parentFolderId);
-  const isOwnFolder = parentInCache ? parentInCache.user_id === currentUser?.id : false;
-  if (!isOwnFolder) {
-    const { data: dbSubs } = await sb.from('folders').select('id, name, parent_id, user_id, is_public').eq('parent_id', parentFolderId);
-    if (dbSubs?.length) {
-      dbSubs.forEach(f => { if (!foldersCache.find(c => c.id === f.id)) foldersCache.push(f); });
-      subs = dbSubs;
-    }
-  }
+  const subs = foldersCache.filter(f => f.parent_id === parentFolderId);
 
   if (subs.length) {
     const section = document.createElement('div');
@@ -1221,19 +1211,6 @@ async function renderFriendPublicLibrary(friend, isSelf) {
         ${isSelf ? '' : '<button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>'}
       </div>
     `;
-    // Folder cards are clickable — open the folder to browse its contents
-    if (item.type === 'folder') {
-      el.style.cursor = 'pointer';
-      el.addEventListener('click', e => {
-        if (e.target.closest('.btn-like, .btn-import-shared-item')) return;
-        // Push folder into cache so renderSubfolders can navigate
-        if (!foldersCache.find(f => f.id === item.id)) {
-          foldersCache.push({ id: item.id, name: item.title, parent_id: null, user_id: friend.id, is_public: true });
-        }
-        openFolder(item.id, item.title, null);
-      });
-    }
-
     grid.appendChild(el);
 
     el.querySelector('.btn-like').addEventListener('click', async () => {
@@ -2501,14 +2478,24 @@ function updateInboxBadge(count) {
 }
 
 async function importSharedChapter(folderId, folderName) {
-  // Fetch the shared folder's quizzes
+  // Collect all folder IDs in the shared chapter tree (BFS via DB)
+  const allFolderIds = [folderId];
+  const queue = [folderId];
+  while (queue.length) {
+    const curr = queue.shift();
+    const { data: children } = await sb.from('folders').select('id').eq('parent_id', curr);
+    (children || []).forEach(f => { allFolderIds.push(f.id); queue.push(f.id); });
+  }
+
+  // Fetch all quizzes across the entire folder tree
   const { data: srcQuizzes, error } = await sb.from('quizzes')
-    .select('title, questions')
-    .eq('folder_id', folderId);
+    .select('title, questions, folder_id')
+    .in('folder_id', allFolderIds);
   if (error) { toast('Could not load chapter: ' + error.message, 'error'); console.error(error); return; }
-  console.log('importSharedChapter: found', srcQuizzes?.length, 'quizzes for folder', folderId);
+  console.log('importSharedChapter: found', srcQuizzes?.length, 'quizzes across', allFolderIds.length, 'folders');
   if (!srcQuizzes || srcQuizzes.length === 0) {
     toast('That chapter has no quizzes (or is not shared publicly yet).', 'error');
+    return;
   }
 
   const { data: newFolder, error: fErr } = await sb.from('folders').insert({
@@ -2518,7 +2505,7 @@ async function importSharedChapter(folderId, folderName) {
   }).select().single();
   if (fErr || !newFolder) { toast('Could not import chapter.', 'error'); return; }
 
-  for (const quiz of (srcQuizzes || [])) {
+  for (const quiz of srcQuizzes) {
     await sb.from('quizzes').insert({
       user_id: currentUser.id,
       folder_id: newFolder.id,
