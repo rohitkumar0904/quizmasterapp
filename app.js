@@ -3847,7 +3847,7 @@ if (profileView && !document.getElementById('btn-save-profile')) {
   saveBtn.textContent = '💾 Save Profile';
   saveBtn.style.marginTop = '1rem';
   saveBtn.addEventListener('click', saveProfile);
-  const profileCard = profileView.querySelector('.card');
+  const profileCard = profileView.querySelector('.profile-card');
   if (profileCard) profileCard.appendChild(saveBtn);
 }
 
