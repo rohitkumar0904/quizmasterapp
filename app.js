@@ -84,7 +84,7 @@ async function handleLogin(e) {
   setLoading(btn, false);
 
   if (error) { toast('Login failed: ' + error.message, 'error'); return; }
-  // onSignedIn will be called by onAuthStateChange SIGNED_IN event
+  await onSignedIn(data.user);
 }
 
 async function handleSignup(e) {
@@ -121,7 +121,7 @@ async function handleSignup(e) {
   // users into the app shell with no real session, so Supabase calls
   // (like creating a folder) silently failed under RLS.
   if (data.session) {
-    // onSignedIn will be called by onAuthStateChange SIGNED_IN event
+    await onSignedIn(data.user);
   } else {
     toast('Account created! Check your email to verify before logging in.', 'success');
     form.reset();
@@ -2512,51 +2512,61 @@ function updateInboxBadge(count) {
 }
 
 async function importSharedChapter(folderId, folderName) {
-  // BFS: fetch entire folder tree, preserving structure
-  // srcFolderIdToNewId maps original folder id -> newly created folder id
-  const srcFolderIdToNewId = {};
-  const queue = [{ srcId: folderId, parentNewId: null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
-  let totalQuizzes = 0;
+  toast('Importing…', 'info');
 
+  // Step 1: fetch ALL folders in tree + ALL quizzes in 2 parallel calls
+  const allSrcFolderIds = [folderId];
+  const queue = [folderId];
   while (queue.length) {
-    const { srcId, parentNewId, name } = queue.shift();
-
-    // Create corresponding folder for current user
-    const { data: newFolder, error: fErr } = await sb.from('folders').insert({
-      user_id: currentUser.id,
-      name,
-      parent_id: parentNewId,
-      is_public: false
-    }).select().single();
-    if (fErr || !newFolder) { toast('Could not create folder "' + name + '".', 'error'); return; }
-    srcFolderIdToNewId[srcId] = newFolder.id;
-    foldersCache.unshift(newFolder);
-
-    // Copy quizzes in this folder
-    const { data: quizzes } = await sb.from('quizzes').select('title, questions').eq('folder_id', srcId);
-    for (const quiz of (quizzes || [])) {
-      await sb.from('quizzes').insert({
-        user_id: currentUser.id,
-        folder_id: newFolder.id,
-        title: quiz.title,
-        questions: quiz.questions,
-        is_public: false
-      });
-      totalQuizzes++;
-    }
-
-    // Enqueue child folders
-    const { data: children } = await sb.from('folders').select('id, name').eq('parent_id', srcId);
-    (children || []).forEach(c => queue.push({ srcId: c.id, parentNewId: newFolder.id, name: c.name }));
+    const curr = queue.shift();
+    const { data: children } = await sb.from('folders').select('id, name, parent_id').eq('parent_id', curr);
+    (children || []).forEach(f => { allSrcFolderIds.push(f.id); queue.push(f.id); });
   }
 
-  if (totalQuizzes === 0) {
+  const [{ data: srcFolders }, { data: srcQuizzes }] = await Promise.all([
+    sb.from('folders').select('id, name, parent_id').in('id', allSrcFolderIds),
+    sb.from('quizzes').select('title, questions, folder_id').in('folder_id', allSrcFolderIds)
+  ]);
+
+  if (!srcQuizzes?.length) {
     toast('That chapter has no quizzes (or is not shared publicly yet).', 'error');
     return;
   }
 
+  // Step 2: create folders one by one (need real IDs for parent_id chain)
+  // but fetch children was already done — just insert in BFS order
+  const srcFolderMap = {};
+  (srcFolders || []).forEach(f => srcFolderMap[f.id] = f);
+  const srcIdToNewId = {};
+  const bfsQueue = [{ srcId: folderId, parentNewId: null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
+
+  while (bfsQueue.length) {
+    const { srcId, parentNewId, name } = bfsQueue.shift();
+    const { data: newFolder, error: fErr } = await sb.from('folders').insert({
+      user_id: currentUser.id, name, parent_id: parentNewId, is_public: false
+    }).select().single();
+    if (fErr || !newFolder) { toast('Could not create folder.', 'error'); return; }
+    srcIdToNewId[srcId] = newFolder.id;
+    foldersCache.unshift(newFolder);
+    // enqueue children from already-fetched data
+    (srcFolders || []).filter(f => f.parent_id === srcId)
+      .forEach(c => bfsQueue.push({ srcId: c.id, parentNewId: newFolder.id, name: c.name }));
+  }
+
+  // Step 3: bulk insert ALL quizzes in one call
+  const quizzesToInsert = (srcQuizzes || []).map(q => ({
+    user_id: currentUser.id,
+    folder_id: srcIdToNewId[q.folder_id],
+    title: q.title,
+    questions: q.questions,
+    is_public: false
+  })).filter(q => q.folder_id); // skip if folder mapping missing
+
+  const { error: qErr } = await sb.from('quizzes').insert(quizzesToInsert);
+  if (qErr) { toast('Could not import quizzes: ' + qErr.message, 'error'); return; }
+
   if (typeof renderFolders === 'function') renderFolders();
-  toast(`"${(folderName || 'Chapter') + ' (shared)'}" added to your library! (${totalQuizzes} quizzes)`, 'success');
+  toast(`"${(folderName || 'Chapter') + ' (shared)'}" added! (${quizzesToInsert.length} quizzes)`, 'success');
 }
 
 // ── SHARE CHAPTER MODAL (real data) ─────────────────────────────
@@ -3942,7 +3952,6 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
   }
 
   // Listen for auth changes (token refresh, signout on another tab)
-  // NOTE: SIGNED_IN fires on every login — skip if handleLogin already called onSignedIn
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session?.user && !currentUser) {
       await onSignedIn(session.user);
