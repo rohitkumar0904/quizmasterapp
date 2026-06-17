@@ -3421,18 +3421,31 @@ async function renderGlobalSearchResults(query) {
 
   el.innerHTML = '<div class="global-search-empty">Searching…</div>';
 
-  const [users, myFolders, myQuizzes] = await Promise.all([
+  const [users, myFolders, myQuizzes, pubFolders, pubQuizzes] = await Promise.all([
     searchUsers(q),
     sb.from('folders').select('id,name').eq('user_id', currentUser?.id).ilike('name', `%${q}%`).limit(5),
-    sb.from('quizzes').select('id,title').eq('user_id', currentUser?.id).ilike('title', `%${q}%`).limit(5)
+    sb.from('quizzes').select('id,title').eq('user_id', currentUser?.id).ilike('title', `%${q}%`).limit(5),
+    sb.from('folders').select('id,name,user_id').eq('is_public', true).neq('user_id', currentUser?.id).ilike('name', `%${q}%`).limit(5),
+    sb.from('quizzes').select('id,title,user_id').eq('is_public', true).neq('user_id', currentUser?.id).ilike('title', `%${q}%`).limit(5)
   ]);
 
-  el.innerHTML = '';
   const allUsers = users || [];
   const folders  = myFolders.data || [];
   const quizzes  = myQuizzes.data || [];
+  const publicFolders = pubFolders.data || [];
+  const publicQuizzes = pubQuizzes.data || [];
 
-  if (!allUsers.length && !folders.length && !quizzes.length) {
+  // Look up owner display names for public results (small batch, only when needed)
+  let ownerMap = {};
+  const ownerIds = [...new Set([...publicFolders.map(f => f.user_id), ...publicQuizzes.map(qz => qz.user_id)])];
+  if (ownerIds.length) {
+    const { data: owners } = await sb.from('profiles').select('id, display_name').in('id', ownerIds);
+    (owners || []).forEach(o => { ownerMap[o.id] = o.display_name; });
+  }
+
+  el.innerHTML = '';
+
+  if (!allUsers.length && !folders.length && !quizzes.length && !publicFolders.length && !publicQuizzes.length) {
     el.innerHTML = '<div class="global-search-empty">No matches found.</div>';
     return;
   }
@@ -3463,7 +3476,7 @@ async function renderGlobalSearchResults(query) {
     label.className = 'global-search-group-label';
     label.textContent = 'Your Folders & Quizzes';
     el.appendChild(label);
-    [...folders.map(f => ({ ...f, kind: 'folder' })), ...quizzes.map(q => ({ ...q, kind: 'quiz' }))].forEach(item => {
+    [...folders.map(f => ({ ...f, kind: 'folder' })), ...quizzes.map(qz => ({ ...qz, kind: 'quiz' }))].forEach(item => {
       const row = document.createElement('div');
       row.className = 'global-search-item';
       row.innerHTML = `
@@ -3485,6 +3498,36 @@ async function renderGlobalSearchResults(query) {
           if (parentFolder) openFolder(parentFolder.id, parentFolder.name, parentFolder.parent_id || null);
           else showView('folder');
         }
+      });
+      el.appendChild(row);
+    });
+  }
+
+  if (publicFolders.length || publicQuizzes.length) {
+    const label = document.createElement('div');
+    label.className = 'global-search-group-label';
+    label.textContent = 'Public Folders & Quizzes';
+    el.appendChild(label);
+    [...publicFolders.map(f => ({ ...f, kind: 'folder' })), ...publicQuizzes.map(qz => ({ ...qz, kind: 'quiz' }))].forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'global-search-item';
+      const ownerName = ownerMap[item.user_id] || 'Someone';
+      row.innerHTML = `
+        <div class="global-search-item-left">
+          <div class="global-search-item-text">
+            <strong>${escHtml(item.name || item.title)}</strong>
+            <span>${item.kind === 'folder' ? '📁 Folder' : '📝 Quiz'} · 🌐 by ${escHtml(ownerName)}</span>
+          </div>
+        </div>
+        <span class="global-search-item-tag">View</span>
+      `;
+      // Public folders/quizzes belong to someone else — open their public
+      // library (where this item appears with Like / Add to My Library)
+      // instead of the owner-only folder view used for our own content.
+      row.addEventListener('click', () => {
+        document.getElementById('global-search-input').value = '';
+        el.innerHTML = '';
+        openFriendProfile({ id: item.user_id, display_name: ownerName });
       });
       el.appendChild(row);
     });
