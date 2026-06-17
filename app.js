@@ -322,19 +322,6 @@ async function loadGroups() {
   groupsCache = data || [];
 }
 
-// Returns all descendant folder IDs (recursive) for a given parent folder ID.
-// Relies on foldersCache being already populated.
-function getDescendantFolderIds(parentId) {
-  const result = [];
-  const queue = [parentId];
-  while (queue.length) {
-    const curr = queue.shift();
-    const children = foldersCache.filter(f => f.parent_id === curr);
-    children.forEach(f => { result.push(f.id); queue.push(f.id); });
-  }
-  return result;
-}
-
 async function loadFolders() {
   if (!currentUser) return;
   await loadGroups();
@@ -458,16 +445,9 @@ function renderFolderCard(folder, container, insertBefore) {
   card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
     e.stopPropagation();
     const newVal = !folder.is_public;
-    // Cascade to all descendant folders
-    const descIds = getDescendantFolderIds(folder.id);
-    const allFolderIds = [folder.id, ...descIds];
-    const { error } = await sb.from('folders').update({ is_public: newVal }).in('id', allFolderIds);
+    const { error } = await sb.from('folders').update({ is_public: newVal }).eq('id', folder.id);
     if (error) { toast('Could not update visibility: ' + error.message, 'error'); return; }
-    // Update cache for all affected folders
-    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = newVal; });
-    // Cascade to all quizzes in those folders
-    await sb.from('quizzes').update({ is_public: newVal }).in('folder_id', allFolderIds);
-    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = newVal; });
+    folder.is_public = newVal;
     const badge = card.querySelector('[data-visibility-badge]');
     badge.textContent = folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private';
     badge.className = 'visibility-badge' + (folder.is_public ? ' visibility-badge--public' : '');
@@ -1185,7 +1165,7 @@ async function renderFriendPublicLibrary(friend, isSelf) {
   grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
 
   const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id').eq('user_id', friend.id).eq('is_public', true),
+    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', friend.id).eq('is_public', true).is('parent_id', null),
     sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', friend.id).eq('is_public', true)
   ]);
 
@@ -2607,12 +2587,8 @@ document.getElementById('btn-copy-chapter-link')?.addEventListener('click', asyn
 
   const folder = foldersCache.find(f => f.id === activeFolderId);
   if (folder && !folder.is_public) {
-    const descIds = getDescendantFolderIds(folder.id);
-    const allFolderIds = [folder.id, ...descIds];
-    await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
-    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
-    await sb.from('quizzes').update({ is_public: true }).in('folder_id', allFolderIds);
-    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
+    await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
+    folder.is_public = true;
     toast('Chapter made public so others can open this link', 'info');
   }
 
@@ -2633,17 +2609,15 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
 
   // Recipients need to be able to read this folder + its quizzes.
-  const descIds = getDescendantFolderIds(folder.id);
-  const allFolderIds = [folder.id, ...descIds];
-  const { error: fErr } = await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
+  const { error: fErr } = await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
   if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); console.error(fErr); return; }
-  foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
+  folder.is_public = true;
   const { error: qErr, count } = await sb.from('quizzes')
     .update({ is_public: true }, { count: 'exact' })
-    .in('folder_id', allFolderIds);
+    .eq('folder_id', folder.id);
   if (qErr) { toast('Could not make quizzes public: ' + qErr.message, 'error'); console.error(qErr); return; }
   console.log('Marked quizzes public:', count);
-  quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
+  quizzesCache.forEach(q => { if (q.folder_id === folder.id) q.is_public = true; });
 
   for (const cb of checked) {
     await sb.from('inbox_messages').insert({
@@ -3358,8 +3332,8 @@ async function buildPublicLibrary() {
   grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
 
   const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id').eq('user_id', currentUser?.id).eq('is_public', true),
-    sb.from('quizzes').select('id, title, user_id, questions').eq('user_id', currentUser?.id).eq('is_public', true)
+    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', currentUser?.id).eq('is_public', true).is('parent_id', null),
+    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', currentUser?.id).eq('is_public', true).is('folder_id', null)
   ]);
 
   const items = [
