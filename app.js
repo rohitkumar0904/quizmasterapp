@@ -84,7 +84,7 @@ async function handleLogin(e) {
   setLoading(btn, false);
 
   if (error) { toast('Login failed: ' + error.message, 'error'); return; }
-  await onSignedIn(data.user);
+  // onSignedIn called by onAuthStateChange SIGNED_IN event
 }
 
 async function handleSignup(e) {
@@ -121,7 +121,7 @@ async function handleSignup(e) {
   // users into the app shell with no real session, so Supabase calls
   // (like creating a folder) silently failed under RLS.
   if (data.session) {
-    await onSignedIn(data.user);
+    // onSignedIn called by onAuthStateChange SIGNED_IN event
   } else {
     toast('Account created! Check your email to verify before logging in.', 'success');
     form.reset();
@@ -528,15 +528,24 @@ async function loadFolderCount(folderId) {
 
 async function createFolder(name, silent, parentId = null) {
   if (!currentUser) return null;
+  const tempId = 'temp-' + Date.now();
+  const tempFolder = { id: tempId, user_id: currentUser.id, name: name.trim(), parent_id: parentId || null, is_public: false, _pending: true };
+  foldersCache.unshift(tempFolder);
+  renderFolders();
+  if (!silent) toast('Folder created!', 'success');
   const { data, error } = await sb.from('folders').insert({
     user_id: currentUser.id,
     name: name.trim(),
     parent_id: parentId || null
   }).select().single();
-  if (error) { toast('Could not create folder: ' + error.message, 'error'); return null; }
-  foldersCache.unshift(data);
-  renderFolders();
-  if (!silent) toast('Folder created!', 'success');
+  if (error) {
+    toast('Could not save folder: ' + error.message, 'error');
+    foldersCache = foldersCache.filter(f => f.id !== tempId);
+    renderFolders();
+    return null;
+  }
+  const idx = foldersCache.findIndex(f => f.id === tempId);
+  if (idx !== -1) foldersCache[idx] = data;
   return data;
 }
 
@@ -3762,7 +3771,7 @@ document.getElementById('btn-create-folder').addEventListener('click', async e =
   if (!name) return;
   closeModal('modal-folder');
   document.getElementById('new-folder-name').value = '';
-  await createFolder(name);
+  createFolder(name);
 }, true);
 
 // Export backup (override static)
