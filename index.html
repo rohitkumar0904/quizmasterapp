@@ -761,7 +761,7 @@ Rules:
 
         <div class="card">
           <h3 class="card-title">📦 Export Full Backup</h3>
-          <p class="card-desc">Downloads a complete JSON file of all your folders, quizzes, questions, and history.</p>
+          <p class="card-desc">Downloads a complete JSON file of all your groups, folders (including subfolders), quizzes, questions, and history. Share this file with a friend — they can import it to get an exact copy.</p>
           <div class="backup-actions">
             <button class="btn btn--primary" id="btn-export-all">⇩ Export All Data</button>
             <button class="btn btn--ghost" id="btn-export-quiz">Export Single Quiz…</button>
@@ -770,13 +770,13 @@ Rules:
 
         <div class="card">
           <h3 class="card-title">📥 Import / Restore</h3>
-          <p class="card-desc">Paste a backup JSON or upload a <code>.json</code> file to restore your data.</p>
+          <p class="card-desc">Upload or paste a backup JSON file. All groups, folders, subfolders, and quizzes will be added to your account — your existing data stays safe.</p>
           <div class="import-tabs">
             <button class="tab-btn active" data-backup-tab="paste-restore">Paste JSON</button>
             <button class="tab-btn" data-backup-tab="upload-restore">Upload File</button>
           </div>
           <div class="import-pane active" data-backup-pane="paste-restore">
-            <textarea id="restore-paste-area" rows="8" placeholder='{"folders": [...], "quizzes": [...], "history": [...]}'></textarea>
+            <textarea id="restore-paste-area" rows="8" placeholder='{"groups": [...], "folders": [...], "quizzes": [...], "history": []}'></textarea>
           </div>
           <div class="import-pane" data-backup-pane="upload-restore">
             <label class="file-drop" for="restore-file-input">
@@ -799,7 +799,7 @@ Rules:
             </div>
             <p id="restore-progress-detail" style="font-size:0.8rem;color:var(--text-muted,#888);margin-top:6px"></p>
           </div>
-          <p class="hint" style="margin-top:0.75rem">⚠️ Restoring will merge data. Existing quizzes with same ID will be overwritten.</p>
+          <p class="hint" style="margin-top:0.75rem">✅ Import is safe — it only <strong>adds</strong> new data. Your existing folders and quizzes are never deleted or overwritten.</p>
         </div>
 
       </div>
