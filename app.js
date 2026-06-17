@@ -611,17 +611,27 @@ async function openFolder(folderId, folderName, parentFolderId) {
   renderBreadcrumb(pathArr);
 
   showView('folder');
-  renderSubfolders(folderId);
+  await renderSubfolders(folderId);
   await loadQuizzes(folderId);
 }
 
-function renderSubfolders(parentFolderId) {
+async function renderSubfolders(parentFolderId) {
   const list = document.getElementById('quiz-list');
   if (!list) return;
 
   list.querySelectorAll('.subfolder-section, .quizzes-section-label').forEach(c => c.remove());
 
-  const subs = foldersCache.filter(f => f.parent_id === parentFolderId);
+  // Use cache for own folders; fetch from DB for friend/public folders
+  let subs = foldersCache.filter(f => f.parent_id === parentFolderId);
+  const parentInCache = foldersCache.find(f => f.id === parentFolderId);
+  const isOwnFolder = parentInCache ? parentInCache.user_id === currentUser?.id : false;
+  if (!isOwnFolder) {
+    const { data: dbSubs } = await sb.from('folders').select('id, name, parent_id, user_id, is_public').eq('parent_id', parentFolderId);
+    if (dbSubs?.length) {
+      dbSubs.forEach(f => { if (!foldersCache.find(c => c.id === f.id)) foldersCache.push(f); });
+      subs = dbSubs;
+    }
+  }
 
   if (subs.length) {
     const section = document.createElement('div');
@@ -1165,7 +1175,7 @@ async function renderFriendPublicLibrary(friend, isSelf) {
   grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
 
   const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', friend.id).eq('is_public', true).is('parent_id', null),
+    sb.from('folders').select('id, name, user_id').eq('user_id', friend.id).eq('is_public', true),
     sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', friend.id).eq('is_public', true)
   ]);
 
@@ -1211,6 +1221,19 @@ async function renderFriendPublicLibrary(friend, isSelf) {
         ${isSelf ? '' : '<button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>'}
       </div>
     `;
+    // Folder cards are clickable — open the folder to browse its contents
+    if (item.type === 'folder') {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', e => {
+        if (e.target.closest('.btn-like, .btn-import-shared-item')) return;
+        // Push folder into cache so renderSubfolders can navigate
+        if (!foldersCache.find(f => f.id === item.id)) {
+          foldersCache.push({ id: item.id, name: item.title, parent_id: null, user_id: friend.id, is_public: true });
+        }
+        openFolder(item.id, item.title, null);
+      });
+    }
+
     grid.appendChild(el);
 
     el.querySelector('.btn-like').addEventListener('click', async () => {
@@ -3332,8 +3355,8 @@ async function buildPublicLibrary() {
   grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
 
   const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', currentUser?.id).eq('is_public', true).is('parent_id', null),
-    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', currentUser?.id).eq('is_public', true).is('folder_id', null)
+    sb.from('folders').select('id, name, user_id').eq('user_id', currentUser?.id).eq('is_public', true),
+    sb.from('quizzes').select('id, title, user_id, questions').eq('user_id', currentUser?.id).eq('is_public', true)
   ]);
 
   const items = [
