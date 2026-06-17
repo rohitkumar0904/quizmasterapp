@@ -2523,18 +2523,18 @@ function updateInboxBadge(count) {
 async function importSharedChapter(folderId, folderName) {
   toast('Importing…', 'info');
 
-  // Step 1: fetch ALL folders in tree + ALL quizzes in 2 parallel calls
+  // Step 1: fetch ALL folders in tree (public only) then all their quizzes
   const allSrcFolderIds = [folderId];
   const queue = [folderId];
   while (queue.length) {
     const curr = queue.shift();
-    const { data: children } = await sb.from('folders').select('id, name, parent_id').eq('parent_id', curr);
+    const { data: children } = await sb.from('folders').select('id, name, parent_id').eq('parent_id', curr).eq('is_public', true);
     (children || []).forEach(f => { allSrcFolderIds.push(f.id); queue.push(f.id); });
   }
 
   const [{ data: srcFolders }, { data: srcQuizzes }] = await Promise.all([
     sb.from('folders').select('id, name, parent_id').in('id', allSrcFolderIds),
-    sb.from('quizzes').select('title, questions, folder_id').in('folder_id', allSrcFolderIds)
+    sb.from('quizzes').select('title, questions, folder_id').in('folder_id', allSrcFolderIds).eq('is_public', true)
   ]);
 
   if (!srcQuizzes?.length) {
@@ -2655,8 +2655,12 @@ document.getElementById('btn-copy-chapter-link')?.addEventListener('click', asyn
 
   const folder = foldersCache.find(f => f.id === activeFolderId);
   if (folder && !folder.is_public) {
-    await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
-    folder.is_public = true;
+    const descIds = getDescendantFolderIds(folder.id);
+    const allFolderIds = [folder.id, ...descIds];
+    await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
+    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
+    await sb.from('quizzes').update({ is_public: true }).in('folder_id', allFolderIds);
+    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
     toast('Chapter made public so others can open this link', 'info');
   }
 
@@ -2676,16 +2680,18 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   const checked = Array.from(document.querySelectorAll('#share-chapter-friend-list input[type="checkbox"]:checked'));
   if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
 
-  // Recipients need to be able to read this folder + its quizzes.
-  const { error: fErr } = await sb.from('folders').update({ is_public: true }).eq('id', folder.id);
+  // Recipients need to be able to read this folder + its quizzes (full tree).
+  const descIds = getDescendantFolderIds(folder.id);
+  const allFolderIds = [folder.id, ...descIds];
+  const { error: fErr } = await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
   if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); console.error(fErr); return; }
-  folder.is_public = true;
+  foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
   const { error: qErr, count } = await sb.from('quizzes')
     .update({ is_public: true }, { count: 'exact' })
-    .eq('folder_id', folder.id);
+    .in('folder_id', allFolderIds);
   if (qErr) { toast('Could not make quizzes public: ' + qErr.message, 'error'); console.error(qErr); return; }
   console.log('Marked quizzes public:', count);
-  quizzesCache.forEach(q => { if (q.folder_id === folder.id) q.is_public = true; });
+  quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
 
   for (const cb of checked) {
     await sb.from('inbox_messages').insert({
