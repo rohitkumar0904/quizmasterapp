@@ -3130,9 +3130,17 @@ async function exportBackup() {
     sb.from('quiz_attempts').select('*').eq('user_id', currentUser.id),
     sb.from('notes').select('*').eq('user_id', currentUser.id)
   ]);
+  // Inject group_name into each folder so old-style backup restore can reconstruct groups
+  const foldersWithGroupName = (folders || []).map(f => ({
+    ...f,
+    group_name: f.group_id
+      ? (groups || []).find(g => g.id === f.group_id)?.name || null
+      : null
+  }));
+
   const backup = {
     groups,
-    folders,
+    folders: foldersWithGroupName,
     quizzes,
     attempts,
     notes,
@@ -3171,6 +3179,24 @@ async function importBackup(raw) {
     const groups  = backup.groups  || [];
     const folders = backup.folders || [];
     const quizzes = backup.quizzes || [];
+
+    // Edge case: old backup (v1) had no groups array but folders have group_id.
+    // Reconstruct groups from folders' group_name field if present.
+    const extraGroups = [];
+    if (groups.length === 0) {
+      const seenIds = new Set();
+      for (const f of folders) {
+        if (f.group_id && f.group_name && !seenIds.has(f.group_id)) {
+          seenIds.add(f.group_id);
+          extraGroups.push({ id: f.group_id, name: f.group_name, sort_order: extraGroups.length });
+        }
+      }
+      if (extraGroups.length > 0) {
+        groups.push(...extraGroups);
+        console.log('Reconstructed', extraGroups.length, 'groups from folder metadata:', extraGroups.map(g => g.name));
+      }
+    }
+
     const total   = groups.length + folders.length + quizzes.length || 1;
     let done = 0;
     const tick = (label, detail) => {
@@ -3180,16 +3206,25 @@ async function importBackup(raw) {
 
     // ── Step 1: Groups ───────────────────────────────────────────
     const groupIdMap = {};
-    setProgress(0, 'Creating groups…');
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i];
-      const { data: ng } = await sb.from('groups').insert({
-        user_id:    currentUser.id,
-        name:       g.name,
-        sort_order: i
-      }).select().single();
-      if (ng) groupIdMap[g.id] = ng.id;
-      tick('Creating groups…', g.name);
+    if (groups.length > 0) {
+      setProgress(0, 'Creating groups…');
+      for (let i = 0; i < groups.length; i++) {
+        const g = groups[i];
+        const { data: ng, error: gErr } = await sb.from('groups').insert({
+          user_id:    currentUser.id,
+          name:       g.name,
+          sort_order: i
+        }).select().single();
+        if (gErr) {
+          console.error('Group insert failed:', g.name, gErr.message);
+          toast('Could not create group "' + g.name + '": ' + gErr.message, 'error');
+        } else if (ng) {
+          groupIdMap[g.id] = ng.id;
+          // Update local cache so renderFolders shows group immediately
+          groupsCache.push({ ...ng });
+        }
+        tick('Creating groups…', g.name);
+      }
     }
 
     // ── Step 2: Root folders ─────────────────────────────────────
@@ -3250,6 +3285,9 @@ async function importBackup(raw) {
     const gCount = Object.keys(groupIdMap).length;
     const fCount = Object.keys(folderIdMap).length;
     toast(`Import done ✓  ${gCount} groups · ${fCount} folders · ${quizCount} quizzes added.`, 'success');
+    // Reset caches so loadFolders/loadGroups fetches everything fresh from DB
+    groupsCache = [];
+    foldersCache = [];
     await loadFolders();
     setTimeout(hideProgress, 3000);
   } catch (err) {
@@ -3601,6 +3639,74 @@ document.getElementById('btn-create-folder').addEventListener('click', async e =
 document.getElementById('btn-export-all').addEventListener('click', e => {
   e.stopImmediatePropagation();
   exportBackup();
+}, true);
+
+// -- FILE UPLOAD HANDLER (override oldstatic basic version) --
+document.getElementById('restore-file-input')?.addEventListener('change', e => {
+  e.stopImmediatePropagation();
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const label = document.querySelector('label[for="restore-file-input"]');
+
+  // Show "reading\u2026" state
+  if (label) {
+    label.style.borderColor = 'var(--accent, #7c3aed)';
+    label.style.background  = 'var(--accent-subtle, rgba(124,58,237,0.08))';
+    const sp = label.querySelector('span:not(.file-drop-icon)');
+    if (sp) sp.innerHTML = `<strong>Reading ${escHtml(file.name)}\u2026</strong>`;
+  }
+
+  const fr = new FileReader();
+  fr.onload = ev => {
+    const raw = ev.target.result;
+    const ta = document.getElementById('restore-paste-area');
+    if (ta) ta.value = raw;
+
+    try {
+      const parsed = JSON.parse(raw);
+      const gCount = (parsed.groups  || []).length;
+      const fCount = (parsed.folders || []).length;
+      const qCount = (parsed.quizzes || []).length;
+      const exportDate = parsed.exportedAt
+        ? new Date(parsed.exportedAt).toLocaleDateString()
+        : 'unknown date';
+
+      if (label) {
+        label.style.borderColor = 'var(--green, #22c55e)';
+        label.style.background  = 'rgba(34,197,94,0.08)';
+        const sp = label.querySelector('span:not(.file-drop-icon)');
+        if (sp) sp.innerHTML =
+          `\u2705 <strong>${escHtml(file.name)}</strong><br>` +
+          `<span style="font-size:0.82rem;opacity:0.8">${gCount} groups � ${fCount} folders � ${qCount} quizzes � exported ${exportDate}</span>`;
+        const icon = label.querySelector('.file-drop-icon');
+        if (icon) icon.textContent = '\u2705';
+      }
+
+      // Auto-switch to Paste tab so user can see loaded content
+      const pasteBtn = document.querySelector('[data-backup-tab="paste-restore"]');
+      if (pasteBtn) {
+        pasteBtn.closest('.card')?.querySelectorAll('[data-backup-tab]').forEach(b => b.classList.remove('active'));
+        pasteBtn.closest('.card')?.querySelectorAll('[data-backup-pane]').forEach(p => p.classList.remove('active'));
+        pasteBtn.classList.add('active');
+        document.querySelector('[data-backup-pane="paste-restore"]')?.classList.add('active');
+      }
+
+      toast(`\u2705 File loaded: ${fCount} folders, ${qCount} quizzes ready. Click "Restore Data" to import.`, 'success');
+    } catch {
+      if (label) {
+        label.style.borderColor = 'var(--red, #ef4444)';
+        label.style.background  = 'rgba(239,68,68,0.08)';
+        const sp = label.querySelector('span:not(.file-drop-icon)');
+        if (sp) sp.innerHTML = '\u274c <strong>Invalid file</strong> \u2014 use a QuizMaster backup .json';
+        const icon = label.querySelector('.file-drop-icon');
+        if (icon) icon.textContent = '\u274c';
+      }
+      toast('Invalid backup file \u2014 not valid JSON.', 'error');
+    }
+  };
+  fr.onerror = () => toast('Could not read file.', 'error');
+  fr.readAsText(file);
 }, true);
 
 // Restore backup (override static)
