@@ -2864,6 +2864,7 @@ async function renderFlashcards(questions, setName) {
           <div class="flash-card-head">
             <span class="flash-num">${i + 1}</span>
             <div class="flash-actions">
+              <button class="icon-btn" title="Edit question">✏️</button>
               <button class="icon-btn" title="Search online">🔍</button>
               <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
             </div>
@@ -2876,6 +2877,7 @@ async function renderFlashcards(questions, setName) {
           <div class="flash-card-head">
             <span class="flash-num">${i + 1}</span>
             <div class="flash-actions">
+              <button class="icon-btn" title="Edit question">✏️</button>
               <button class="icon-btn" title="Search online">🔍</button>
               <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
             </div>
@@ -2890,6 +2892,14 @@ async function renderFlashcards(questions, setName) {
     card.addEventListener('click', e => {
       if (e.target.closest('.icon-btn')) return;
       card.classList.toggle('flipped');
+    });
+
+    // Edit buttons (both front and back)
+    card.querySelectorAll('.icon-btn[title="Edit question"]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openFlashcardEditor(i, card);
+      });
     });
 
     // Search buttons (both front and back)
@@ -2923,7 +2933,165 @@ async function renderFlashcards(questions, setName) {
   applyFlashFilter();
 }
 
-// Show/hide flashcards based on the active filter ('all' or 'bookmarked')
+// ── FLASHCARD EDITOR ─────────────────────────────────────────
+function openFlashcardEditor(questionIndex, cardEl) {
+  const q = activeQuizQuestions[questionIndex];
+  if (!q) return;
+
+  document.getElementById('modal-flashcard-edit')?.remove();
+  const m = document.createElement('div');
+  m.className = 'modal active';
+  m.id = 'modal-flashcard-edit';
+
+  const numOptions = Array.isArray(q.options) ? q.options.length : 4;
+  const optionsHTML = Array.from({ length: numOptions }, (_, i) => `
+    <div class="fce-option-row">
+      <label class="fce-option-label">
+        <input type="radio" name="fce-correct" value="${i}" ${q.correctIndex === i ? 'checked' : ''}>
+        <span class="fce-option-letter">${String.fromCharCode(65 + i)}</span>
+      </label>
+      <input type="text" class="input fce-option-input" data-opt-idx="${i}"
+        value="${escHtml(q.options?.[i] || '')}" placeholder="Option ${String.fromCharCode(65 + i)}">
+      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option" ${numOptions <= 2 ? 'disabled' : ''}>✕</button>
+    </div>`).join('');
+
+  m.innerHTML = `
+    <div class="modal-card" style="max-width:520px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <h3 style="margin:0">✏️ Edit Question ${questionIndex + 1}</h3>
+        <button class="btn btn--ghost btn--small" onclick="document.getElementById('modal-flashcard-edit')?.remove()">✕</button>
+      </div>
+
+      <label class="label">Question</label>
+      <textarea id="fce-question" class="input" rows="3"
+        style="width:100%;resize:vertical;margin-bottom:1rem">${escHtml(q.question || '')}</textarea>
+
+      <label class="label">Options <small style="color:var(--slate)">(● = correct answer)</small></label>
+      <div id="fce-options-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">
+        ${optionsHTML}
+      </div>
+
+      <button class="btn btn--ghost btn--small" id="fce-add-opt" style="margin-bottom:1rem">＋ Add Option</button>
+
+      <label class="label">Explanation <small style="color:var(--slate)">(optional)</small></label>
+      <textarea id="fce-explanation" class="input" rows="2"
+        style="width:100%;resize:vertical;margin-bottom:1.25rem">${escHtml(q.explanation || '')}</textarea>
+
+      <div class="fce-danger-zone">
+        <button class="btn btn--ghost btn--small fce-delete-btn" id="fce-delete-q">🗑 Delete this question</button>
+      </div>
+
+      <div class="modal-actions" style="margin-top:1rem">
+        <button class="btn btn--ghost" onclick="document.getElementById('modal-flashcard-edit')?.remove()">Cancel</button>
+        <button class="btn btn--primary" id="fce-save-btn">Save Changes</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+
+  // ── Add option ──
+  document.getElementById('fce-add-opt').addEventListener('click', () => {
+    const list = document.getElementById('fce-options-list');
+    const count = list.querySelectorAll('.fce-option-row').length;
+    if (count >= 6) { toast('Max 6 options allowed', 'info'); return; }
+    const idx = count;
+    const row = document.createElement('div');
+    row.className = 'fce-option-row';
+    row.innerHTML = `
+      <label class="fce-option-label">
+        <input type="radio" name="fce-correct" value="${idx}">
+        <span class="fce-option-letter">${String.fromCharCode(65 + idx)}</span>
+      </label>
+      <input type="text" class="input fce-option-input" data-opt-idx="${idx}" placeholder="Option ${String.fromCharCode(65 + idx)}">
+      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option">✕</button>`;
+    list.appendChild(row);
+    _bindFceRemoveButtons();
+    row.querySelector('input[type=text]').focus();
+  });
+
+  _bindFceRemoveButtons();
+
+  // ── Delete question ──
+  document.getElementById('fce-delete-q').addEventListener('click', async () => {
+    if (!confirm(`Delete question ${questionIndex + 1}? This cannot be undone.`)) return;
+    const btn = document.getElementById('fce-delete-q');
+    btn.textContent = '⏳ Deleting…'; btn.disabled = true;
+    activeQuizQuestions.splice(questionIndex, 1);
+    const ok = await _saveQuizQuestions();
+    if (ok) {
+      m.remove();
+      renderFlashcards(activeQuizQuestions, activeQuizTitle);
+      toast('Question deleted.', 'success');
+    } else {
+      activeQuizQuestions.splice(questionIndex, 0, q); // revert
+      btn.textContent = '🗑 Delete this question'; btn.disabled = false;
+    }
+  });
+
+  // ── Save ──
+  document.getElementById('fce-save-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('fce-save-btn');
+    const questionText = document.getElementById('fce-question').value.trim();
+    if (!questionText) { toast('Question cannot be empty', 'error'); return; }
+
+    const optionInputs = [...document.querySelectorAll('#fce-options-list .fce-option-input')];
+    const options = optionInputs.map(inp => inp.value.trim());
+    if (options.some(o => !o)) { toast('All options must have text', 'error'); return; }
+    if (options.length < 2)   { toast('At least 2 options required', 'error'); return; }
+
+    const correctRadio = document.querySelector('input[name="fce-correct"]:checked');
+    const correctIndex = correctRadio ? parseInt(correctRadio.value) : 0;
+    const explanation  = document.getElementById('fce-explanation').value.trim();
+
+    btn.textContent = '⏳ Saving…'; btn.disabled = true;
+
+    // Update in memory
+    activeQuizQuestions[questionIndex] = { ...q, question: questionText, options, correctIndex, explanation };
+
+    const ok = await _saveQuizQuestions();
+    if (ok) {
+      m.remove();
+      renderFlashcards(activeQuizQuestions, activeQuizTitle);
+      toast('Question updated!', 'success');
+    } else {
+      activeQuizQuestions[questionIndex] = q; // revert
+      btn.textContent = 'Save Changes'; btn.disabled = false;
+    }
+  });
+}
+
+function _bindFceRemoveButtons() {
+  document.querySelectorAll('.fce-remove-opt').forEach(btn => {
+    btn.onclick = () => {
+      const list = document.getElementById('fce-options-list');
+      const rows = list.querySelectorAll('.fce-option-row');
+      if (rows.length <= 2) { toast('At least 2 options required', 'info'); return; }
+      btn.closest('.fce-option-row').remove();
+      // Re-index letters
+      list.querySelectorAll('.fce-option-row').forEach((row, i) => {
+        row.querySelector('.fce-option-letter').textContent = String.fromCharCode(65 + i);
+        row.querySelector('input[type=radio]').value = i;
+        row.querySelector('input[type=text]').dataset.optIdx = i;
+        row.querySelector('input[type=text]').placeholder = `Option ${String.fromCharCode(65 + i)}`;
+        const removeBtn = row.querySelector('.fce-remove-opt');
+        if (removeBtn) removeBtn.disabled = list.querySelectorAll('.fce-option-row').length <= 2;
+      });
+    };
+  });
+}
+
+// Save activeQuizQuestions to Supabase
+async function _saveQuizQuestions() {
+  if (!activeQuizId || !currentUser) { toast('Cannot save — no quiz selected', 'error'); return false; }
+  const { error } = await sb.from('quizzes')
+    .update({ questions: activeQuizQuestions })
+    .eq('id', activeQuizId)
+    .eq('user_id', currentUser.id);
+  if (error) { toast('Save failed: ' + error.message, 'error'); return false; }
+  // Update local cache
+  const cached = quizzesCache.find(q => q.id === activeQuizId);
+  if (cached) cached.questions = [...activeQuizQuestions];
+  return true;
+}
 function applyFlashFilter() {
   const grid = document.getElementById('flash-grid');
   if (!grid) return;
