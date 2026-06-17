@@ -84,7 +84,7 @@ async function handleLogin(e) {
   setLoading(btn, false);
 
   if (error) { toast('Login failed: ' + error.message, 'error'); return; }
-  await onSignedIn(data.user);
+  // onSignedIn will be called by onAuthStateChange SIGNED_IN event
 }
 
 async function handleSignup(e) {
@@ -121,7 +121,7 @@ async function handleSignup(e) {
   // users into the app shell with no real session, so Supabase calls
   // (like creating a folder) silently failed under RLS.
   if (data.session) {
-    await onSignedIn(data.user);
+    // onSignedIn will be called by onAuthStateChange SIGNED_IN event
   } else {
     toast('Account created! Check your email to verify before logging in.', 'success');
     form.reset();
@@ -3942,6 +3942,7 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
   }
 
   // Listen for auth changes (token refresh, signout on another tab)
+  // NOTE: SIGNED_IN fires on every login — skip if handleLogin already called onSignedIn
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session?.user && !currentUser) {
       await onSignedIn(session.user);
