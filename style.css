@@ -1673,6 +1673,7 @@ select:focus {
   max-height: 90vh;
   overflow-y: auto;
   margin: auto;
+   z-index: 10000;
 }
 
 .modal-card h3 { margin-bottom: 0.5rem; }
