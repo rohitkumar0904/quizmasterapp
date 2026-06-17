@@ -92,10 +92,14 @@ input[type="radio"]:checked + .fce-option-letter {
     </form>
 
     <form id="form-signup" class="auth-form">
-      <label>Display Name
-        <input type="text" name="name" placeholder="Rohit Kumar" required>
-      </label>
-      <label>Email
+  <label>Display Name
+    <input type="text" name="name" placeholder="Rohit Kumar" required>
+  </label>
+  <label>Roll No. <small style="font-weight:400;color:#888">(optional — e.g. SSC-2025-001)</small>
+    <input type="text" name="rollno" placeholder="e.g. SSC-2025-001">
+  </label>
+  <label>Email
+    
         <input type="email" name="email" placeholder="you@example.com" required>
       </label>
       <label>Password
@@ -831,11 +835,16 @@ Rules:
       <div class="profile-card">
         <div class="profile-top">
           <div class="profile-avatar" id="profile-avatar"></div>
-          <div class="profile-info">
-            <h3 id="profile-display-name"></h3>
-            <span class="rollno-value" id="profile-rollno"></span>
-            <p class="profile-joined" id="profile-joined"></p>
-          </div>
+         <div class="profile-info">
+  <h3 id="profile-display-name" contenteditable="true" spellcheck="false"></h3>
+  <div class="profile-rollno-edit">
+    <span class="rollno-label">Roll No.</span>
+    <input type="text" id="profile-rollno-input" class="rollno-input"
+      placeholder="e.g. SSC-2025-001" maxlength="30">
+  </div>
+  <span class="rollno-value" id="profile-rollno"></span>
+  <p class="profile-joined" id="profile-joined"></p>
+</div>
           <div class="profile-visibility">
             <label class="toggle-row toggle-row--card">
               <span>
