@@ -154,7 +154,6 @@ async function onSignedIn(user) {
   ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
     document.querySelectorAll(sel).forEach(el => el.style.display = '');
   });
-  showView('dashboard');
   populateUI();
   await Promise.all([
     loadFolders(),
@@ -162,6 +161,7 @@ async function onSignedIn(user) {
     loadPins(),
   ]);
   loadFriends(); // non-blocking
+  showView('dashboard');
 }
 
 async function loadProfile() {
