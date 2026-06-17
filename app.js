@@ -4029,3 +4029,40 @@ document.getElementById('app-shell').style.pointerEvents = 'none';
   auth.classList.add('active');
   toast('Logged out.', 'info');
 }
+// ── RESET MY DATA BUTTON ─────────────────────────────────────
+async function resetMyData() {
+  // Double confirmation
+  const first = confirm('⚠️ Are you sure? This will delete ALL your quizzes, folders, history, bookmarks, notes, and friends.');
+  if (!first) return;
+  const second = confirm('🚨 Final warning! This CANNOT be undone. Type OK to confirm.');
+  if (!second) return;
+
+  const btn = document.getElementById('btn-reset-data');
+  setLoading(btn, true, 'Resetting...');
+
+  const { error } = await sb.rpc('reset_user_data', { target_user_id: currentUser.id });
+
+  setLoading(btn, false);
+
+  if (error) {
+    toast('Reset failed: ' + error.message, 'error');
+    return;
+  }
+
+  toast('All data reset successfully!', 'success');
+
+  // Reload app fresh
+  setTimeout(() => location.reload(), 1500);
+}
+
+// Add Reset button in profile view
+if (profileView && !document.getElementById('btn-reset-data')) {
+  const resetBtn = document.createElement('button');
+  resetBtn.id = 'btn-reset-data';
+  resetBtn.className = 'btn btn--danger';
+  resetBtn.textContent = '🗑️ Reset My Data';
+  resetBtn.style.marginTop = '0.5rem';
+  resetBtn.addEventListener('click', resetMyData);
+  const profileCard = profileView.querySelector('.profile-card');
+  if (profileCard) profileCard.appendChild(resetBtn);
+}
