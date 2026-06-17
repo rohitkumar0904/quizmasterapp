@@ -4054,7 +4054,6 @@ async function resetMyData() {
   // Reload app fresh
   setTimeout(() => location.reload(), 1500);
 }
-
 // Add Reset button in profile view
 if (profileView && !document.getElementById('btn-reset-data')) {
   const resetBtn = document.createElement('button');
@@ -4072,14 +4071,6 @@ if (profileView && !document.getElementById('btn-reset-data')) {
   resetBtn.id = 'btn-reset-data';
   resetBtn.className = 'btn';
   resetBtn.textContent = '🗑️ Reset My Data';
-  resetBtn.style.cssText = `
-    margin-top: 0.5rem;
-    background: transparent;
-    border: 1px solid var(--error, #e53e3e);
-    color: var(--error, #e53e3e);
-    font-size: 0.8rem;
-    padding: 0.45rem 1rem;
-  `;
   resetBtn.addEventListener('click', resetMyData);
   const profileCard = profileView.querySelector('.profile-card');
   if (profileCard) profileCard.appendChild(resetBtn);
