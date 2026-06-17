@@ -1893,10 +1893,65 @@ function renderRaceHistory(rows) {
         <div class="race-hist-score">${r.my_score ?? '–'}/${r.total_q ?? '–'} — ${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
         <div class="race-hist-date">${dateStr}</div>
       </div>
-      <div class="race-hist-badge">${resultLabel}</div>
+      <div class="race-hist-right">
+        <div class="race-hist-badge">${resultLabel}</div>
+        <button class="btn btn--ghost btn--small btn-race-leaderboard">🏆 Leaderboard</button>
+      </div>
     `;
+    el.querySelector('.btn-race-leaderboard').addEventListener('click', () => {
+      openRaceLeaderboard({
+        myName, oppName, myInitial, oppInitial,
+        myScore: r.my_score, oppScore: r.opp_score,
+        totalQ: r.total_q, result: r.result,
+        durationSecs: r.duration_secs, dateStr,
+      });
+    });
     list.appendChild(el);
   });
+}
+
+function openRaceLeaderboard({ myName, oppName, myInitial, oppInitial, myScore, oppScore, totalQ, result, durationSecs, dateStr }) {
+  const list   = document.getElementById('leaderboard-list');
+  const nameEl = document.getElementById('leaderboard-quiz-name');
+  if (!list) return;
+
+  if (nameEl) nameEl.textContent = `⚡ Race — ${myName} vs ${oppName}`;
+
+  const fmtTime = (s) => {
+    if (!s) return '—';
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  // Build ranked rows: winner first
+  const myPct  = totalQ > 0 ? Math.round((myScore  / totalQ) * 100) : 0;
+  const oppPct = totalQ > 0 ? Math.round((oppScore / totalQ) * 100) : 0;
+
+  const rows = [
+    { name: myName,  initials: myInitial  || '?', score: myScore,  pct: myPct,  isMe: true },
+    { name: oppName, initials: oppInitial || '?', score: oppScore, pct: oppPct, isMe: false },
+  ];
+  // Sort: winner on top
+  rows.sort((a, b) => b.pct - a.pct);
+
+  const medals = ['🥇', '🥈'];
+  list.innerHTML = rows.map((r, i) => `
+    <div class="leaderboard-row${r.isMe ? ' leaderboard-row--me' : ''}">
+      <div class="leaderboard-row-main">
+        <span class="lb-rank">${medals[i]}</span>
+        <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
+        <div class="lb-info">
+          <strong>${escHtml(r.isMe ? 'You' : r.name)}</strong>
+          <span>${escHtml(r.name)}</span>
+        </div>
+        <div class="lb-score">${r.pct}%</div>
+        <div class="lb-time">${r.score ?? '–'}/${totalQ ?? '–'}</div>
+      </div>
+    </div>
+  `).join('');
+
+  openModal('modal-leaderboard');
 }
 
 // ── SHARED QUIZ SESSIONS (jab man ho tab start karein) ─────────
