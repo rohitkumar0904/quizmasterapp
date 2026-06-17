@@ -712,6 +712,20 @@ function _showRaceFinale(allPlayers) {
   const iWon=myAcc>oppAcc||(myAcc===oppAcc&&(me.time_elapsed||9999)<=(opp.time_elapsed||9999));
   const draw=myAcc===oppAcc&&me.time_elapsed===opp.time_elapsed;
   const outcome=draw?'🤝 Draw!':iWon?'🏆 You Win!':'😤 Opponent Wins!';
+
+  // Save result to Supabase history
+  const result = draw ? 'tie' : iWon ? 'win' : 'lose';
+  if (typeof saveRaceHistory === 'function') {
+    saveRaceHistory({
+      roomCode:     raceState.roomCode,
+      result,
+      myScore:      me.correct,
+      oppScore:     opp.correct,
+      totalQ:       me.total_answered,
+      durationSecs: me.time_elapsed || 0,
+      opponentName: opp.player_name,
+    });
+  }
   const outcomeClass=draw?'race-draw':iWon?'race-win':'race-lose';
   const fmtT=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
