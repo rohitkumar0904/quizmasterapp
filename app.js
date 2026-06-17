@@ -173,7 +173,7 @@ async function loadProfile() {
     const { data: newProfile } = await sb.from('profiles').insert({
       id: currentUser.id,
       display_name: name,
-      roll_no: ''
+      roll_no: null
     }).select().single();
     data = newProfile;
   }
@@ -187,10 +187,14 @@ function populateUI() {
 
   // Profile view
   const pName = document.getElementById('profile-display-name');
+  const pNameInput = document.getElementById('profile-display-name-input');
   const pRoll = document.getElementById('profile-rollno');
+  const pRollInput = document.getElementById('profile-rollno-input');
   const pEmail = document.getElementById('profile-email');
   if (pName) pName.textContent = currentProfile.display_name;
-  if (pRoll) pRoll.textContent = currentProfile.roll_no;
+  if (pNameInput) pNameInput.value = currentProfile.display_name || '';
+  if (pRoll) pRoll.textContent = currentProfile.roll_no || 'Not set';
+  if (pRollInput) pRollInput.value = currentProfile.roll_no || '';
   if (pEmail) pEmail.textContent = currentUser?.email || '';
 
   const pAvatar = document.getElementById('profile-avatar');
@@ -237,19 +241,67 @@ function populateUI() {
 // ── PROFILE SAVE ─────────────────────────────────────────────
 async function saveProfile() {
   if (!currentUser || !currentProfile) return;
-  const nameInput = document.getElementById('profile-display-name');
-  const newName = nameInput?.textContent?.trim() || currentProfile.display_name;
+  const nameInput = document.getElementById('profile-display-name-input');
+  const newName = (nameInput?.value || '').trim() || currentProfile.display_name;
+  const rollInput = document.getElementById('profile-rollno-input');
+  const newRoll = (rollInput?.value || '').trim();
+
+  if (!newName) { toast('Name cannot be empty.', 'error'); return; }
 
   const { error } = await sb.from('profiles').update({
     display_name: newName,
+    roll_no: newRoll || null,
     is_public: document.getElementById('toggle-profile-public')?.checked ?? true,
     theme: darkMode ? 'dark' : 'light'
   }).eq('id', currentUser.id);
 
-  if (error) { toast('Could not save profile: ' + error.message, 'error'); return; }
+  if (error) {
+    // Postgres unique-constraint violation
+    if (error.code === '23505') {
+      toast('That roll number is already taken. Try another one.', 'error');
+    } else {
+      toast('Could not save profile: ' + error.message, 'error');
+    }
+    return;
+  }
   currentProfile.display_name = newName;
+  currentProfile.roll_no = newRoll || null;
+  populateUI();
+  exitFieldEditMode('profile-display-name', 'profile-display-name-input');
+  exitFieldEditMode('profile-rollno', 'profile-rollno-input');
   toast('Profile saved!', 'success');
 }
+
+function exitFieldEditMode(displayId, inputId) {
+  const display = document.getElementById(displayId);
+  const input    = document.getElementById(inputId);
+  if (display) display.style.display = '';
+  if (input)   input.style.display   = 'none';
+}
+
+function enterFieldEditMode(displayId, inputId) {
+  const display = document.getElementById(displayId);
+  const input    = document.getElementById(inputId);
+  if (!display || !input) return;
+  display.style.display = 'none';
+  input.style.display   = 'inline-block';
+  input.focus();
+  input.select();
+}
+
+document.getElementById('btn-edit-displayname')?.addEventListener('click', () => {
+  enterFieldEditMode('profile-display-name', 'profile-display-name-input');
+});
+document.getElementById('btn-edit-rollno')?.addEventListener('click', () => {
+  enterFieldEditMode('profile-rollno', 'profile-rollno-input');
+});
+
+document.getElementById('profile-display-name-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveProfile(); }
+});
+document.getElementById('profile-rollno-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveProfile(); }
+});
 
 // ── THEME PERSISTENCE ────────────────────────────────────────
 async function persistTheme() {
