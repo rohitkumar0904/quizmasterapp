@@ -1656,7 +1656,7 @@ select:focus {
   background: rgba(10,15,25,0.6);
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 10000;
   padding: 1rem;
   overflow-y: auto;
 }
