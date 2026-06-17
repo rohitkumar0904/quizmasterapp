@@ -1932,8 +1932,14 @@ function openRaceLeaderboard({ myName, oppName, myInitial, oppInitial, myScore, 
     { name: myName,  initials: myInitial  || '?', score: myScore,  pct: myPct,  isMe: true },
     { name: oppName, initials: oppInitial || '?', score: oppScore, pct: oppPct, isMe: false },
   ];
-  // Sort: winner on top
-  rows.sort((a, b) => b.pct - a.pct);
+  // Sort: higher pct wins; on tie → lower time wins (race winner decided by speed)
+  rows.sort((a, b) => {
+    if (b.pct !== a.pct) return b.pct - a.pct;
+    // Same score → whoever won the race goes first
+    if (result === 'win')  return a.isMe ? -1 : 1;
+    if (result === 'lose') return a.isMe ? 1 : -1;
+    return 0; // tie
+  });
 
   const medals = ['🥇', '🥈'];
   list.innerHTML = rows.map((r, i) => `
