@@ -106,12 +106,26 @@ async function handleSignup(e) {
 
   if (error) { toast('Sign-up failed: ' + error.message, 'error'); return; }
 
-  // Create profile row
-if (data.user) {
-  await onSignedIn(data.user);
-}
-  else {
-    toast('Check your email to confirm your account!', 'info');
+  // Supabase returns a user object with an empty identities array (no error)
+  // when the email is already registered — this prevents email-enumeration
+  // attacks, so we detect it manually and tell the person to log in instead.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    toast('This email is already registered. Please log in instead.', 'error');
+    switchTab('login');
+    return;
+  }
+
+  // IMPORTANT: data.user is returned even when email confirmation is still
+  // pending — only data.session tells us the account is actually
+  // authenticated. Checking data.user alone (the old bug) let unverified
+  // users into the app shell with no real session, so Supabase calls
+  // (like creating a folder) silently failed under RLS.
+  if (data.session) {
+    await onSignedIn(data.user);
+  } else {
+    toast('Account created! Check your email to verify before logging in.', 'success');
+    form.reset();
+    switchTab('login');
   }
 }
 
