@@ -89,26 +89,32 @@ async function handleLogin(e) {
 
 async function handleSignup(e) {
   e.preventDefault();
-  const form   = e.target;
-  const name   = form.name.value.trim();
-  const rollno = (form.rollno?.value || '').trim();
-  const email  = form.email.value.trim();
-  const pass   = form.password.value;
-  const btn    = form.querySelector('[type=submit]');
+  const form = e.target;
+  const name = form.name.value.trim();
+  const email = form.email.value.trim();
+  const pass  = form.password.value;
+  const btn   = form.querySelector('[type=submit]');
 
   if (pass.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
   setLoading(btn, true, 'Creating account…');
 
   const { data, error } = await sb.auth.signUp({
     email, password: pass,
-    options: { data: { display_name: name, roll_no: rollno } }
+    options: { data: { display_name: name } }
   });
   setLoading(btn, false);
 
   if (error) { toast('Sign-up failed: ' + error.message, 'error'); return; }
-  if (data.session) await onSignedIn(data.user);
-  else toast('Check your email to confirm your account!', 'info');
+
+  // Create profile row
+if (data.user) {
+  await onSignedIn(data.user);
 }
+  else {
+    toast('Check your email to confirm your account!', 'info');
+  }
+}
+
 async function handleLogout() {
   await sb.auth.signOut();
   currentUser = null;
@@ -148,12 +154,12 @@ async function loadProfile() {
   if (!currentUser) return;
   let { data, error } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
   if (error || !data) {
-    const name   = currentUser.user_metadata?.display_name || 'User';
-    const rollno = currentUser.user_metadata?.roll_no || '';
+    // Create if missing (edge case)
+    const name = currentUser.user_metadata?.display_name || 'User';
     const { data: newProfile } = await sb.from('profiles').insert({
       id: currentUser.id,
       display_name: name,
-      roll_no: rollno
+      roll_no: ''
     }).select().single();
     data = newProfile;
   }
@@ -167,10 +173,8 @@ function populateUI() {
 
   // Profile view
   const pName = document.getElementById('profile-display-name');
-const pRollInput = document.getElementById('profile-rollno-input');
-if (pRollInput) pRollInput.value = currentProfile.roll_no || '';
   const pRoll = document.getElementById('profile-rollno');
-   const pEmail = document.getElementById('profile-email');
+  const pEmail = document.getElementById('profile-email');
   if (pName) pName.textContent = currentProfile.display_name;
   if (pRoll) pRoll.textContent = currentProfile.roll_no;
   if (pEmail) pEmail.textContent = currentUser?.email || '';
@@ -219,26 +223,17 @@ if (pRollInput) pRollInput.value = currentProfile.roll_no || '';
 // ── PROFILE SAVE ─────────────────────────────────────────────
 async function saveProfile() {
   if (!currentUser || !currentProfile) return;
-  const nameInput    = document.getElementById('profile-display-name');
-  const rollInput    = document.getElementById('profile-rollno-input');
-  const newName      = nameInput?.textContent?.trim() || currentProfile.display_name;
-  const newRollNo    = rollInput?.value?.trim() || '';
+  const nameInput = document.getElementById('profile-display-name');
+  const newName = nameInput?.textContent?.trim() || currentProfile.display_name;
 
   const { error } = await sb.from('profiles').update({
     display_name: newName,
-    roll_no: newRollNo,
     is_public: document.getElementById('toggle-profile-public')?.checked ?? true,
     theme: darkMode ? 'dark' : 'light'
   }).eq('id', currentUser.id);
 
   if (error) { toast('Could not save profile: ' + error.message, 'error'); return; }
   currentProfile.display_name = newName;
-  currentProfile.roll_no      = newRollNo;
-
-  // Update sidebar display
-  document.getElementById('user-rollno').textContent = newRollNo || 'QM-0000';
-  document.getElementById('profile-rollno').textContent = newRollNo;
-
   toast('Profile saved!', 'success');
 }
 
@@ -3743,7 +3738,7 @@ if (profileView && !document.getElementById('btn-save-profile')) {
   saveBtn.textContent = '💾 Save Profile';
   saveBtn.style.marginTop = '1rem';
   saveBtn.addEventListener('click', saveProfile);
-  const profileCard = profileView.querySelector('.profile-card');
+  const profileCard = profileView.querySelector('.card');
   if (profileCard) profileCard.appendChild(saveBtn);
 }
 
