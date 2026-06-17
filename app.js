@@ -2523,7 +2523,7 @@ function updateInboxBadge(count) {
 async function importSharedChapter(folderId, folderName) {
   toast('Importing…', 'info');
 
-  // Step 1: fetch ALL folders in tree (public only) then all their quizzes
+  // Step 1: fetch ALL folders in tree (public only) + ALL quizzes
   const allSrcFolderIds = [folderId];
   const queue = [folderId];
   while (queue.length) {
@@ -2533,7 +2533,7 @@ async function importSharedChapter(folderId, folderName) {
   }
 
   const [{ data: srcFolders }, { data: srcQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, parent_id').in('id', allSrcFolderIds),
+    sb.from('folders').select('id, name, parent_id').in('id', allSrcFolderIds).eq('is_public', true),
     sb.from('quizzes').select('title, questions, folder_id').in('folder_id', allSrcFolderIds).eq('is_public', true)
   ]);
 
