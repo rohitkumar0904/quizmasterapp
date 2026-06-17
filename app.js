@@ -1835,7 +1835,7 @@ async function saveRaceHistory({ roomCode, result, myScore, oppScore, totalQ, du
   const { error } = await sb.from('pomo_race_history').insert({
     room_code:     roomCode,
     player_id:     currentUser.id,
-    player_name:   currentUser.user_metadata?.display_name || 'You',
+    player_name:   currentProfile?.display_name || currentUser.user_metadata?.display_name || 'You',
     opponent_name: opponentName,
     result,
     my_score:      myScore,
