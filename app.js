@@ -3407,12 +3407,15 @@ async function buildPublicLibrary() {
 
   const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
     sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', currentUser?.id).eq('is_public', true).is('parent_id', null),
-    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', currentUser?.id).eq('is_public', true).is('folder_id', null)
+    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', currentUser?.id).eq('is_public', true)
   ]);
 
   const items = [
     ...(pubFolders || []).map(f => ({ id: f.id, type: '📁 Folder', title: f.name, meta: '' })),
-    ...(pubQuizzes || []).map(q => ({ id: q.id, type: '📝 Quiz', title: q.title, meta: `${q.questions?.length || 0} Qs` }))
+    ...(pubQuizzes || []).map(q => {
+      const folderName = q.folder_id ? (foldersCache.find(f => f.id === q.folder_id)?.name || null) : null;
+      return { id: q.id, type: '📝 Quiz', title: q.title, meta: `${q.questions?.length || 0} Qs` + (folderName ? ` · 📁 ${folderName}` : '') };
+    })
   ];
 
   grid.innerHTML = '';
