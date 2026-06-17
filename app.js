@@ -1887,22 +1887,13 @@ function renderRaceHistory(rows) {
     const el = document.createElement('div');
     el.className = `race-hist-card race-hist-card--${r.result}`;
     el.innerHTML = `
-      <div class="race-hist-players">
-        <div class="race-hist-player race-hist-player--me">
-          <div class="race-hist-avatar race-hist-avatar--me">${escHtml(myInitial || '?')}</div>
-          <div class="race-hist-pname">${escHtml(myName)}</div>
-          <div class="race-hist-pscore">${r.my_score ?? '–'}/${r.total_q ?? '–'}</div>
-        </div>
-        <div class="race-hist-vs">
-          <div class="race-hist-badge">${resultLabel}</div>
-          <div class="race-hist-date">${dateStr}</div>
-        </div>
-        <div class="race-hist-player race-hist-player--opp">
-          <div class="race-hist-avatar race-hist-avatar--opp">${escHtml(oppInitial || '?')}</div>
-          <div class="race-hist-pname">${escHtml(oppName)}</div>
-          <div class="race-hist-pscore">${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
-        </div>
+      <div class="race-hist-avatar race-hist-avatar--me">${escHtml(myInitial || '?')}</div>
+      <div class="race-hist-info">
+        <div class="race-hist-opp">${escHtml(myName)} <span class="race-hist-vs-sep">vs</span> ${escHtml(oppName)}</div>
+        <div class="race-hist-score">${r.my_score ?? '–'}/${r.total_q ?? '–'} — ${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
+        <div class="race-hist-date">${dateStr}</div>
       </div>
+      <div class="race-hist-badge">${resultLabel}</div>
     `;
     list.appendChild(el);
   });
