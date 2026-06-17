@@ -5200,3 +5200,22 @@ input[type="checkbox"] { display: none; }
   color: #f87171 !important;
   border-color: #f87171 !important;
 }
+.profile-rollno-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+.rollno-input {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.85rem;
+  width: 180px;
+}
+.rollno-input:focus {
+  outline: none;
+  border-color: var(--saffron);
+}
