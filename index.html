@@ -8,6 +8,48 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css?v=1.0">
+<style>
+/* ── Flashcard Editor Modal ── */
+.fce-option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.fce-option-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fce-option-letter {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+input[type="radio"]:checked + .fce-option-letter {
+  background: var(--saffron);
+  color: var(--ink);
+}
+.fce-option-input { flex: 1; }
+.fce-danger-zone {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+.fce-delete-btn {
+  color: var(--error);
+  border-color: var(--error-soft);
+}
+.fce-delete-btn:hover {
+  background: var(--error-soft);
+}
+</style>
 <script>
   // Apply saved theme immediately, before first paint, to avoid a light/dark flash on refresh.
   (function() {
@@ -1341,8 +1383,8 @@ Rules:
 <!-- Static UI logic -->
 <script src="oldstatic.js"></script>
 <!-- Supabase integration -->
-<script src="app.js"></script>
-<!-- Pomodoro learning flow -->
+<script src="app.js?v=1.0"></script>
+  <!-- Pomodoro learning flow -->
 <script src="pomodoro.js"></script>
 <!-- Pomodoro race multiplayer -->
 <script src="pomodoro-race.js"></script>
