@@ -5303,6 +5303,13 @@ input[type="checkbox"] { display: none; }
   white-space: nowrap;
   flex-shrink: 0;
 }
+.race-hist-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
 .race-hist-card--win  .race-hist-badge { background: #dcfce7; color: #16a34a; }
 .race-hist-card--lose .race-hist-badge { background: #fee2e2; color: #dc2626; }
 .race-hist-card--tie  .race-hist-badge { background: var(--saffron-soft); color: #92400e; }
