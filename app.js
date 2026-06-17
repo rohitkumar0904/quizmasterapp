@@ -154,6 +154,7 @@ async function onSignedIn(user) {
   ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
     document.querySelectorAll(sel).forEach(el => el.style.display = '');
   });
+  showView('dashboard');
   populateUI();
   await Promise.all([
     loadFolders(),
@@ -161,7 +162,6 @@ async function onSignedIn(user) {
     loadPins(),
   ]);
   loadFriends(); // non-blocking
-  showView('dashboard');
 }
 
 async function loadProfile() {
@@ -322,6 +322,16 @@ async function loadGroups() {
   groupsCache = data || [];
 }
 
+function getDescendantFolderIds(parentId) {
+  const result = [];
+  const queue = [parentId];
+  while (queue.length) {
+    const curr = queue.shift();
+    foldersCache.filter(f => f.parent_id === curr).forEach(f => { result.push(f.id); queue.push(f.id); });
+  }
+  return result;
+}
+
 async function loadFolders() {
   if (!currentUser) return;
   await loadGroups();
@@ -445,9 +455,13 @@ function renderFolderCard(folder, container, insertBefore) {
   card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
     e.stopPropagation();
     const newVal = !folder.is_public;
-    const { error } = await sb.from('folders').update({ is_public: newVal }).eq('id', folder.id);
+    const descIds = getDescendantFolderIds(folder.id);
+    const allFolderIds = [folder.id, ...descIds];
+    const { error } = await sb.from('folders').update({ is_public: newVal }).in('id', allFolderIds);
     if (error) { toast('Could not update visibility: ' + error.message, 'error'); return; }
-    folder.is_public = newVal;
+    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = newVal; });
+    await sb.from('quizzes').update({ is_public: newVal }).in('folder_id', allFolderIds);
+    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = newVal; });
     const badge = card.querySelector('[data-visibility-badge]');
     badge.textContent = folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private';
     badge.className = 'visibility-badge' + (folder.is_public ? ' visibility-badge--public' : '');
