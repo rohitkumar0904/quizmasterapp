@@ -1698,6 +1698,198 @@ function renderHistory(attempts) {
   });
 }
 
+// ── DIRECT MESSAGING ─────────────────────────────────────────────
+let _chatConvId      = null;   // active conversation id
+let _chatChannel     = null;   // realtime channel
+let _chatFriendName  = '';
+
+async function openChat(friendId, friendName) {
+  if (!currentUser) return;
+  _chatFriendName = friendName;
+
+  // Find or create conversation (canonical order: smaller uuid first)
+  const [u1, u2] = [currentUser.id, friendId].sort();
+  let { data: conv } = await sb.from('conversations')
+    .select('id')
+    .eq('user1_id', u1).eq('user2_id', u2)
+    .maybeSingle();
+
+  if (!conv) {
+    const { data: newConv, error } = await sb.from('conversations')
+      .insert({ user1_id: u1, user2_id: u2 })
+      .select('id').single();
+    if (error) { toast('Could not open chat.', 'error'); return; }
+    conv = newConv;
+  }
+  _chatConvId = conv.id;
+
+  // Show panel
+  const panel = document.getElementById('chat-panel');
+  if (panel) {
+    document.getElementById('chat-panel-title').textContent = friendName;
+    panel.classList.add('chat-panel--open');
+  }
+
+  await loadMessages(_chatConvId);
+  _subscribeChatRealtime(_chatConvId);
+}
+
+async function loadMessages(convId) {
+  const { data, error } = await sb.from('messages')
+    .select('*')
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending: true })
+    .limit(50);
+  if (error) return;
+
+  const list = document.getElementById('chat-messages-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (data || []).forEach(msg => _appendMessageBubble(msg));
+  list.scrollTop = list.scrollHeight;
+
+  // Mark unseen messages as seen
+  const unseenIds = (data || [])
+    .filter(m => !m.seen && m.sender_id !== currentUser.id)
+    .map(m => m.id);
+  if (unseenIds.length) {
+    await sb.from('messages').update({ seen: true }).in('id', unseenIds);
+  }
+}
+
+function _appendMessageBubble(msg) {
+  const list = document.getElementById('chat-messages-list');
+  if (!list) return;
+  const mine = msg.sender_id === currentUser.id;
+  const el = document.createElement('div');
+  el.className = `chat-bubble ${mine ? 'chat-bubble--mine' : 'chat-bubble--theirs'}`;
+  el.dataset.msgId = msg.id;
+  const time = new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  el.innerHTML = `<span class="chat-bubble-text">${escHtml(msg.content)}</span><span class="chat-bubble-time">${time}</span>`;
+  list.appendChild(el);
+  list.scrollTop = list.scrollHeight;
+}
+
+async function sendMessage() {
+  if (!_chatConvId || !currentUser) return;
+  const input = document.getElementById('chat-input');
+  const text = (input?.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  const { error } = await sb.from('messages').insert({
+    conversation_id: _chatConvId,
+    sender_id: currentUser.id,
+    content: text,
+  });
+  if (error) { toast('Failed to send.', 'error'); input.value = text; }
+}
+
+function _subscribeChatRealtime(convId) {
+  if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
+  _chatChannel = sb.channel(`chat-${convId}`)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'messages',
+      filter: `conversation_id=eq.${convId}`,
+    }, payload => {
+      const msg = payload.new;
+      // Avoid duplicate if we already rendered it (our own sends)
+      if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+      _appendMessageBubble(msg);
+      if (msg.sender_id !== currentUser.id) {
+        sb.from('messages').update({ seen: true }).eq('id', msg.id);
+      }
+    })
+    .subscribe();
+}
+
+function closeChat() {
+  const panel = document.getElementById('chat-panel');
+  if (panel) panel.classList.remove('chat-panel--open');
+  if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
+  _chatConvId = null;
+}
+
+async function loadUnreadCount() {
+  if (!currentUser) return;
+  // Get all conversations for current user
+  const { data: convs } = await sb.from('conversations')
+    .select('id')
+    .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`);
+  if (!convs?.length) return;
+  const convIds = convs.map(c => c.id);
+  const { count } = await sb.from('messages')
+    .select('id', { count: 'exact', head: true })
+    .in('conversation_id', convIds)
+    .eq('seen', false)
+    .neq('sender_id', currentUser.id);
+  const badge  = document.getElementById('inbox-badge');
+  const mbadge = document.querySelector('[data-view="inbox"] .mobile-nav-badge');
+  const n = count || 0;
+  if (badge)  { badge.textContent  = n; badge.style.display  = n ? '' : 'none'; }
+  if (mbadge) { mbadge.textContent = n; mbadge.style.display = n ? '' : 'none'; }
+}
+
+// ── RACE HISTORY ─────────────────────────────────────────────────
+async function saveRaceHistory({ roomCode, result, myScore, oppScore, totalQ, durationSecs, opponentName }) {
+  if (!currentUser) return;
+  const { error } = await sb.from('pomo_race_history').insert({
+    room_code:     roomCode,
+    player_id:     currentUser.id,
+    player_name:   currentUser.user_metadata?.display_name || 'You',
+    opponent_name: opponentName,
+    result,
+    my_score:      myScore,
+    opp_score:     oppScore,
+    total_q:       totalQ,
+    duration_secs: durationSecs,
+  });
+  if (error) console.warn('saveRaceHistory error:', error.message);
+}
+
+async function loadRaceHistory() {
+  if (!currentUser) return;
+  const { data, error } = await sb.from('pomo_race_history')
+    .select('*')
+    .eq('player_id', currentUser.id)
+    .order('played_at', { ascending: false })
+    .limit(20);
+  if (error) { console.warn('loadRaceHistory error:', error.message); return; }
+  renderRaceHistory(data || []);
+}
+
+function renderRaceHistory(rows) {
+  const list  = document.getElementById('race-history-list');
+  const empty = document.getElementById('race-history-empty');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!rows.length) {
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  rows.forEach(r => {
+    const resultLabel = r.result === 'win' ? '🏆 Win' : r.result === 'lose' ? '😤 Loss' : '🤝 Tie';
+    const dateStr = new Date(r.played_at).toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    const oppInitial = (r.opponent_name?.[0] || '?').toUpperCase();
+    const el = document.createElement('div');
+    el.className = `race-hist-card race-hist-card--${r.result}`;
+    el.innerHTML = `
+      <div class="race-hist-avatar">${oppInitial}</div>
+      <div class="race-hist-info">
+        <div class="race-hist-opp">${escHtml(r.opponent_name || 'Opponent')}</div>
+        <div class="race-hist-score">${r.my_score ?? '–'}/${r.total_q ?? '–'} vs ${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
+        <div class="race-hist-date">${dateStr}</div>
+      </div>
+      <div class="race-hist-badge">${resultLabel}</div>
+    `;
+    list.appendChild(el);
+  });
+}
+
 // ── SHARED QUIZ SESSIONS (jab man ho tab start karein) ─────────
 async function loadSharedSessions() {
   if (!currentUser) return;
@@ -2106,6 +2298,7 @@ function renderFriends(friends, pendingRequests) {
         <span class="friend-rollno">${escHtml(friend.roll_no || '')}</span>
       </div>
       <div class="friend-actions">
+        <button class="btn btn--ghost btn--small btn-chat-friend" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">💬 Chat</button>
         <button class="btn btn--ghost btn--small btn-challenge-friend" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">⚔️ Challenge</button>
         <button class="btn btn--ghost btn--small btn-remove-friend" data-friend-id="${friend.id}">Remove</button>
       </div>
@@ -2122,6 +2315,10 @@ function renderFriends(friends, pendingRequests) {
       friendsCache = friendsCache.filter(f => f.id !== friend.id);
       card.remove();
       toast('Friend removed.', 'info');
+    });
+    card.querySelector('.btn-chat-friend').addEventListener('click', e => {
+      e.stopPropagation();
+      openChat(friend.id, friend.display_name);
     });
     card.querySelector('.btn-challenge-friend').addEventListener('click', async () => {
       const quizzes = await loadAllQuizzesForUser();
@@ -3801,10 +3998,10 @@ document.getElementById('btn-do-restore').addEventListener('click', async e => {
 document.querySelectorAll('.nav-link[data-view], [data-view]').forEach(el => {
   el.addEventListener('click', () => {
     const view = el.dataset.view;
-    if (view === 'history')   { loadHistory(); loadSharedSessions(); }
+    if (view === 'history')   { loadHistory(); loadSharedSessions(); loadRaceHistory(); }
     if (view === 'bookmarks') loadBookmarks();
     if (view === 'notes')     loadNotes();
-    if (view === 'friends')   loadFriends();
+    if (view === 'friends')   { loadFriends(); loadUnreadCount(); }
     if (view === 'inbox')     loadInbox();
     if (view === 'profile') {
       buildPublicLibrary();
