@@ -106,7 +106,7 @@ async function handleSignup(e) {
   setLoading(btn, false);
 
   if (error) { toast('Sign-up failed: ' + error.message, 'error'); return; }
-  if (data.user) await onSignedIn(data.user);
+  if (data.session) await onSignedIn(data.user);
   else toast('Check your email to confirm your account!', 'info');
 }
 async function handleLogout() {
@@ -169,6 +169,7 @@ function populateUI() {
   const pName = document.getElementById('profile-display-name');
 const pRollInput = document.getElementById('profile-rollno-input');
 if (pRollInput) pRollInput.value = currentProfile.roll_no || '';
+  const pRoll = document.getElementById('profile-rollno');
    const pEmail = document.getElementById('profile-email');
   if (pName) pName.textContent = currentProfile.display_name;
   if (pRoll) pRoll.textContent = currentProfile.roll_no;
@@ -3742,7 +3743,7 @@ if (profileView && !document.getElementById('btn-save-profile')) {
   saveBtn.textContent = '💾 Save Profile';
   saveBtn.style.marginTop = '1rem';
   saveBtn.addEventListener('click', saveProfile);
-  const profileCard = profileView.querySelector('.card');
+  const profileCard = profileView.querySelector('.profile-card');
   if (profileCard) profileCard.appendChild(saveBtn);
 }
 
