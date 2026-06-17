@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QuizMaster Pro</title>
+  <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E8932E">
+
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -1384,9 +1389,36 @@ Rules:
 <script src="oldstatic.js"></script>
 <!-- Supabase integration -->
 <script src="app.js?v=1.0"></script>
+  <script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+
+        newWorker?.addEventListener('statechange', () => {
+          if (
+            newWorker.state === 'installed' &&
+            navigator.serviceWorker.controller
+          ) {
+            console.log('New version available.');
+          }
+        });
+      });
+
+      console.log('Service Worker registered');
+    } catch (err) {
+      console.error('SW registration failed:', err);
+    }
+  });
+}
+</script>
   <!-- Pomodoro learning flow -->
 <script src="pomodoro.js"></script>
 <!-- Pomodoro race multiplayer -->
 <script src="pomodoro-race.js"></script>
+  
 </body>
 </html>
