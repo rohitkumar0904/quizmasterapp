@@ -1875,17 +1875,34 @@ function renderRaceHistory(rows) {
       day: 'numeric', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
-    const oppInitial = (r.opponent_name?.[0] || '?').toUpperCase();
+
+    // Player names — fall back to currentProfile if player_name not stored
+    const myName  = r.player_name || currentProfile?.display_name || 'You';
+    const oppName = r.opponent_name || 'Opponent';
+
+    // Initials for avatars
+    const myInitial  = myName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    const oppInitial = oppName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+
     const el = document.createElement('div');
     el.className = `race-hist-card race-hist-card--${r.result}`;
     el.innerHTML = `
-      <div class="race-hist-avatar">${oppInitial}</div>
-      <div class="race-hist-info">
-        <div class="race-hist-opp">${escHtml(r.opponent_name || 'Opponent')}</div>
-        <div class="race-hist-score">${r.my_score ?? '–'}/${r.total_q ?? '–'} vs ${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
-        <div class="race-hist-date">${dateStr}</div>
+      <div class="race-hist-players">
+        <div class="race-hist-player race-hist-player--me">
+          <div class="race-hist-avatar race-hist-avatar--me">${escHtml(myInitial || '?')}</div>
+          <div class="race-hist-pname">${escHtml(myName)}</div>
+          <div class="race-hist-pscore">${r.my_score ?? '–'}/${r.total_q ?? '–'}</div>
+        </div>
+        <div class="race-hist-vs">
+          <div class="race-hist-badge">${resultLabel}</div>
+          <div class="race-hist-date">${dateStr}</div>
+        </div>
+        <div class="race-hist-player race-hist-player--opp">
+          <div class="race-hist-avatar race-hist-avatar--opp">${escHtml(oppInitial || '?')}</div>
+          <div class="race-hist-pname">${escHtml(oppName)}</div>
+          <div class="race-hist-pscore">${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
+        </div>
       </div>
-      <div class="race-hist-badge">${resultLabel}</div>
     `;
     list.appendChild(el);
   });
