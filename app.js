@@ -2696,14 +2696,13 @@ function updateFriendBadge(count) {
 async function searchUsers(query) {
   if (!query || query.length < 2) return [];
   const q = query.trim();
-  // Two separate queries — .or() on views is unreliable in Supabase JS
   const [byName, byRoll] = await Promise.all([
-    sb.from('confirmed_profiles')
+    sb.from('profiles')
       .select('id, display_name, roll_no')
       .ilike('display_name', `%${q}%`)
       .neq('id', currentUser?.id)
       .limit(8),
-    sb.from('confirmed_profiles')
+    sb.from('profiles')
       .select('id, display_name, roll_no')
       .ilike('roll_no', `%${q}%`)
       .neq('id', currentUser?.id)
