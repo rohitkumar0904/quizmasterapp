@@ -3054,7 +3054,7 @@ function setupShareChapterModal() {
   const countEl = document.getElementById('share-chapter-count');
   if (nameEl) nameEl.textContent = folder.name;
   if (countEl) {
-    const qCount = quizzesCache.length;
+    const qCount  = quizzesCache.length;
     const totalQs = quizzesCache.reduce((sum, q) => sum + (Array.isArray(q.questions) ? q.questions.length : 0), 0);
     countEl.textContent = `${qCount} quizzes · ${totalQs} questions`;
   }
@@ -3063,7 +3063,108 @@ function setupShareChapterModal() {
   const linkInput = document.getElementById('share-chapter-link-input');
   if (linkInput) linkInput.value = location.origin + '?chapter=' + folder.id;
 
-  // Friends tab
+  // ── Quiz selection checklist ─────────────────────────────────
+  // Inject the quiz-picker section if it doesn't exist yet in the modal
+  const modal = document.getElementById('modal-share-chapter');
+  if (modal && !document.getElementById('share-chapter-quiz-picker')) {
+    // Find a good insertion point — after the count line, before the tabs/friends area
+    const countEl2 = document.getElementById('share-chapter-count');
+    const insertAfter = countEl2?.closest('p') || countEl2?.parentElement;
+    if (insertAfter) {
+      const pickerWrap = document.createElement('div');
+      pickerWrap.id = 'share-chapter-quiz-picker';
+      pickerWrap.innerHTML = `
+        <div class="scqp-header">
+          <span class="scqp-label">What to share:</span>
+          <label class="scqp-selectall">
+            <input type="checkbox" id="scqp-all" checked>
+            <span>Entire folder</span>
+          </label>
+        </div>
+        <div id="scqp-quiz-list" style="display:none"></div>
+      `;
+      insertAfter.insertAdjacentElement('afterend', pickerWrap);
+
+      // Toggle between "entire folder" and individual quiz list
+      document.getElementById('scqp-all').addEventListener('change', e => {
+        document.getElementById('scqp-quiz-list').style.display = e.target.checked ? 'none' : 'block';
+      });
+    }
+  }
+
+  // Populate the individual quiz list with current folder's quizzes
+  const quizList = document.getElementById('scqp-quiz-list');
+  if (quizList) {
+    quizList.innerHTML = '';
+    if (!quizzesCache.length) {
+      quizList.innerHTML = '<p style="font-size:.82rem;color:var(--slate);padding:.4rem 0">No quizzes in this folder.</p>';
+    } else {
+      quizzesCache.forEach(q => {
+        const qCount = Array.isArray(q.questions) ? q.questions.length : 0;
+        const label  = document.createElement('label');
+        label.className = 'scqp-quiz-row';
+        label.innerHTML = `
+          <input type="checkbox" class="scqp-quiz-cb" data-quiz-id="${q.id}" data-quiz-title="${escHtml(q.title)}" checked>
+          <span class="scqp-quiz-title">${escHtml(q.title)}</span>
+          <span class="scqp-quiz-count">${qCount} Qs</span>
+        `;
+        quizList.appendChild(label);
+      });
+    }
+  }
+
+  // Reset to "Entire folder" each time modal opens
+  const allCb = document.getElementById('scqp-all');
+  if (allCb) {
+    allCb.checked = true;
+    if (quizList) quizList.style.display = 'none';
+  }
+
+  // Inject styles once
+  if (!document.getElementById('scqp-style')) {
+    const s = document.createElement('style');
+    s.id = 'scqp-style';
+    s.textContent = `
+      #share-chapter-quiz-picker {
+        margin: 0.75rem 0 0.5rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+      .scqp-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.55rem 0.85rem;
+        background: var(--paper-raised);
+        border-bottom: 1px solid var(--line);
+        font-size: 0.85rem;
+      }
+      .scqp-label { color: var(--slate); font-size: 0.82rem; }
+      .scqp-selectall {
+        display: flex; align-items: center; gap: 0.4rem;
+        cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink);
+      }
+      .scqp-selectall input { accent-color: var(--saffron); width: 14px; height: 14px; cursor: pointer; }
+      #scqp-quiz-list {
+        max-height: 180px; overflow-y: auto;
+        display: flex; flex-direction: column;
+      }
+      .scqp-quiz-row {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.5rem 0.85rem;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer; font-size: 0.85rem;
+        transition: background .12s;
+      }
+      .scqp-quiz-row:last-child { border-bottom: none; }
+      .scqp-quiz-row:hover { background: var(--paper-raised); }
+      .scqp-quiz-row input[type=checkbox] { accent-color: var(--saffron); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
+      .scqp-quiz-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .scqp-quiz-count { color: var(--slate); font-size: 0.78rem; flex-shrink: 0; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // ── Friends tab ──────────────────────────────────────────────
   const list  = document.getElementById('share-chapter-friend-list');
   const empty = document.getElementById('share-chapter-friend-empty');
   const sendBtn = document.getElementById('btn-send-chapter');
@@ -3147,30 +3248,61 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   const checked = Array.from(document.querySelectorAll('#share-chapter-friend-list input[type="checkbox"]:checked'));
   if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
 
-  // Recipients need to be able to read this folder + its quizzes (full tree).
-  const descIds = getDescendantFolderIds(folder.id);
-  const allFolderIds = [folder.id, ...descIds];
-  const { error: fErr } = await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
-  if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); console.error(fErr); return; }
-  foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
-  const { error: qErr, count } = await sb.from('quizzes')
-    .update({ is_public: true }, { count: 'exact' })
-    .in('folder_id', allFolderIds);
-  if (qErr) { toast('Could not make quizzes public: ' + qErr.message, 'error'); console.error(qErr); return; }
-  console.log('Marked quizzes public:', count);
-  quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
+  const sendBtn = document.getElementById('btn-send-chapter');
+  setLoading(sendBtn, true, 'Sharing…');
 
-  for (const cb of checked) {
-    await sb.from('inbox_messages').insert({
-      to_user_id: cb.dataset.friendId,
-      from_user_id: currentUser?.id,
-      type: 'chapter',
-      title: `${currentProfile?.display_name || 'Someone'} shared "${folder.name}" with you`,
-      body: { folder_id: folder.id }
-    });
+  // ── Determine what to share: entire folder OR selected quizzes ──
+  const entireFolder = document.getElementById('scqp-all')?.checked !== false;
+
+  if (entireFolder) {
+    // ── Share full folder (existing behaviour) ───────────────────
+    const descIds    = getDescendantFolderIds(folder.id);
+    const allFolderIds = [folder.id, ...descIds];
+    const { error: fErr } = await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
+    if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); setLoading(sendBtn, false); return; }
+    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
+    await sb.from('quizzes').update({ is_public: true }).in('folder_id', allFolderIds);
+    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
+
+    for (const cb of checked) {
+      await sb.from('inbox_messages').insert({
+        to_user_id: cb.dataset.friendId,
+        from_user_id: currentUser?.id,
+        type: 'chapter',
+        title: `${currentProfile?.display_name || 'Someone'} shared "${folder.name}" with you`,
+        body: { folder_id: folder.id }
+      });
+    }
+    setLoading(sendBtn, false);
+    toast('Folder shared!', 'success');
+
+  } else {
+    // ── Share only selected individual quizzes ────────────────────
+    const selectedCbs = Array.from(document.querySelectorAll('#scqp-quiz-list .scqp-quiz-cb:checked'));
+    if (!selectedCbs.length) { toast('Select at least one quiz to share.', 'info'); setLoading(sendBtn, false); return; }
+
+    // Make each selected quiz public
+    const quizIds = selectedCbs.map(cb => cb.dataset.quizId);
+    await sb.from('quizzes').update({ is_public: true }).in('id', quizIds);
+    quizzesCache.forEach(q => { if (quizIds.includes(q.id)) q.is_public = true; });
+
+    // Send one inbox message per quiz per friend
+    for (const cb of checked) {
+      for (const qcb of selectedCbs) {
+        await sb.from('inbox_messages').insert({
+          to_user_id: cb.dataset.friendId,
+          from_user_id: currentUser?.id,
+          type: 'quiz',
+          title: `${currentProfile?.display_name || 'Someone'} shared "${qcb.dataset.quizTitle}" with you`,
+          body: { quiz_id: qcb.dataset.quizId }
+        });
+      }
+    }
+    setLoading(sendBtn, false);
+    const qWord = selectedCbs.length === 1 ? 'quiz' : 'quizzes';
+    toast(`${selectedCbs.length} ${qWord} shared!`, 'success');
   }
 
-  toast('Chapter shared!', 'success');
   closeModal('modal-share-chapter');
 });
 
