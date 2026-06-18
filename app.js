@@ -3051,7 +3051,8 @@ function setupShareChapterModal() {
   if (!folder) return;
 
   // ── Inject styles once ───────────────────────────────────────
-  if (!document.getElementById('scqp-style')) {
+  document.getElementById('scqp-style')?.remove();
+  {
     const s = document.createElement('style');
     s.id = 'scqp-style';
     s.textContent = `
@@ -3111,6 +3112,8 @@ function setupShareChapterModal() {
         border-bottom: 1px solid var(--line);
         cursor: pointer; transition: background .1s;
         user-select: none;
+        position: relative; z-index: 1;
+        pointer-events: auto;
       }
       .scqp-quiz-row:last-child { border-bottom: none; }
       .scqp-quiz-row:hover { background: var(--saffron-soft, rgba(232,147,46,.08)); }
@@ -3119,6 +3122,8 @@ function setupShareChapterModal() {
         accent-color: var(--saffron);
         flex-shrink: 0; cursor: pointer;
         margin: 0;
+        pointer-events: auto;
+        position: relative; z-index: 2;
       }
       .scqp-quiz-name {
         flex: 1; font-size: 0.85rem; color: var(--ink);
