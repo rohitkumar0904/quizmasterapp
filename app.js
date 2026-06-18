@@ -169,13 +169,19 @@ async function loadProfile() {
   if (!currentUser) return;
   let { data, error } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
   if (error || !data) {
-    // Create if missing (edge case)
     const name = currentUser.user_metadata?.display_name || 'User';
-    const { data: newProfile } = await sb.from('profiles').insert({
+    const cleanName = name.replace(/\s+/g, '').toUpperCase();
+    const digits = Math.floor(1000 + Math.random() * 9000);
+    const roll_no = cleanName + digits;
+    const { data: newProfile, error: insertError } = await sb.from('profiles').insert({
       id: currentUser.id,
       display_name: name,
-  roll_no: ''  // blank — verify hone ke baad trigger assign karega
+      roll_no
     }).select().single();
+    if (insertError) {
+      toast('Profile setup failed: ' + insertError.message, 'error');
+      return;
+    }
     data = newProfile;
   }
   currentProfile = data;
