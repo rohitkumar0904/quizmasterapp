@@ -3114,20 +3114,21 @@ function setupShareChapterModal() {
   }
 
   // ── Build / rebuild the whole picker block ───────────────────
-  let wrap = document.getElementById('scqp-wrap');
-  if (!wrap) {
-    wrap = document.createElement('div');
-    wrap.id = 'scqp-wrap';
-    // Insert before the Friends/Link tabs area (look for the tab bar)
-    const modal = document.getElementById('modal-share-chapter');
-    const tabBar = modal?.querySelector('.tab-bar, .seg-control, [data-tab], .share-tabs')
-                || modal?.querySelector('.modal-card > *:nth-child(3)');
-    if (tabBar) {
-      tabBar.insertAdjacentElement('beforebegin', wrap);
-    } else {
-      // Fallback: append inside modal-card
-      modal?.querySelector('.modal-card')?.appendChild(wrap);
-    }
+  // Remove old wrap so it's always freshly built with latest quizzes
+  document.getElementById('scqp-wrap')?.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = 'scqp-wrap';
+
+  // Anchor: insert right after the element containing share-chapter-count
+  const countAnchor = document.getElementById('share-chapter-count');
+  const anchorParent = countAnchor?.closest('p, div, span') || countAnchor?.parentElement;
+  if (anchorParent) {
+    anchorParent.insertAdjacentElement('afterend', wrap);
+  } else {
+    // Last resort: prepend inside modal-card
+    const mc = document.querySelector('#modal-share-chapter .modal-card');
+    if (mc) mc.prepend(wrap);
   }
 
   // Always rebuild inner HTML so quizzes are fresh each open
@@ -3287,8 +3288,7 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   setLoading(sendBtn, true, 'Sharing…');
 
   // ── Determine mode from segment control ──────────────────────
-  const entireFolder = document.getElementById('scqp-btn-all')?.classList.contains('active') !== false
-                    && !document.getElementById('scqp-btn-pick')?.classList.contains('active');
+  const entireFolder = !document.getElementById('scqp-btn-pick')?.classList.contains('active');
 
   if (entireFolder) {
     // ── Share full folder (existing behaviour) ───────────────────
