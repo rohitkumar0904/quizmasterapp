@@ -3050,155 +3050,156 @@ function setupShareChapterModal() {
   const folder = foldersCache.find(f => f.id === activeFolderId);
   if (!folder) return;
 
-  // Inject scqp styles once
+  // ── Inject styles once ───────────────────────────────────────
   if (!document.getElementById('scqp-style')) {
     const s = document.createElement('style');
     s.id = 'scqp-style';
     s.textContent = `
-      /* ── What to share section ── */
       #scqp-wrap {
-        margin: 0.75rem 0 0.6rem;
+        margin: 0.75rem 0 0;
       }
+      #scqp-wrap .scqp-section-label {
+        font-size: 0.78rem; font-weight: 600; color: var(--slate);
+        text-transform: uppercase; letter-spacing: .04em;
+        margin-bottom: 0.4rem;
+      }
+      /* Segment control */
       .scqp-seg {
-        display: flex; border: 1px solid var(--line);
-        border-radius: var(--radius-md); overflow: hidden;
-        margin-bottom: 0.6rem;
+        display: flex;
+        border: 1.5px solid var(--line);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        margin-bottom: 0.65rem;
       }
       .scqp-seg-btn {
-        flex: 1; padding: 0.5rem 0; font-size: 0.84rem; font-weight: 600;
-        border: none; cursor: pointer; background: var(--paper-raised);
-        color: var(--slate); transition: background .15s, color .15s;
+        flex: 1; padding: 0.48rem 0.5rem;
+        font-size: 0.83rem; font-weight: 600;
+        border: none; cursor: pointer;
+        background: transparent;
+        color: var(--slate);
+        transition: background .15s, color .15s;
         font-family: var(--font-body);
       }
-      .scqp-seg-btn:first-child { border-right: 1px solid var(--line); }
-      .scqp-seg-btn.active {
+      .scqp-seg-btn + .scqp-seg-btn { border-left: 1.5px solid var(--line); }
+      .scqp-seg-btn.scqp-active {
         background: var(--saffron); color: #fff;
       }
-      /* quiz checklist */
+      /* Quiz checklist box */
       #scqp-quiz-list {
-        border: 1px solid var(--line); border-radius: var(--radius-md);
-        overflow: hidden; max-height: 190px; overflow-y: auto;
+        border: 1.5px solid var(--line);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        margin-bottom: 0.5rem;
       }
-      .scqp-quiz-row {
-        display: flex; align-items: center; gap: 0.65rem;
-        padding: 0.55rem 0.9rem;
+      .scqp-topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.38rem 0.8rem;
+        background: var(--paper-raised);
         border-bottom: 1px solid var(--line);
-        cursor: pointer; transition: background .12s; user-select: none;
+        font-size: 0.78rem; color: var(--slate);
+      }
+      .scqp-topbar-toggle {
+        background: none; border: none; cursor: pointer;
+        font-size: 0.78rem; color: var(--saffron);
+        font-family: var(--font-body); padding: 0;
+        font-weight: 600;
+      }
+      .scqp-scroll { max-height: 170px; overflow-y: auto; }
+      .scqp-quiz-row {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.5rem 0.8rem;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer; transition: background .1s;
+        user-select: none;
       }
       .scqp-quiz-row:last-child { border-bottom: none; }
-      .scqp-quiz-row:hover { background: var(--saffron-soft); }
+      .scqp-quiz-row:hover { background: var(--saffron-soft, rgba(232,147,46,.08)); }
       .scqp-quiz-row input[type=checkbox] {
+        width: 15px; height: 15px;
         accent-color: var(--saffron);
-        width: 15px; height: 15px; flex-shrink: 0; cursor: pointer;
+        flex-shrink: 0; cursor: pointer;
+        margin: 0;
       }
-      .scqp-quiz-icon { font-size: 1rem; flex-shrink: 0; }
-      .scqp-quiz-info { flex: 1; min-width: 0; }
-      .scqp-quiz-title {
-        font-size: 0.85rem; font-weight: 600; color: var(--ink);
+      .scqp-quiz-name {
+        flex: 1; font-size: 0.85rem; color: var(--ink);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        display: block;
       }
-      .scqp-quiz-count { font-size: 0.76rem; color: var(--slate); }
-      /* select-all bar */
-      .scqp-selectall-bar {
-        display: flex; align-items: center; justify-content: flex-end;
-        padding: 0.3rem 0.9rem 0.5rem;
-      }
-      .scqp-selectall-bar button {
-        background: none; border: none; font-size: 0.78rem;
-        color: var(--saffron); cursor: pointer; font-family: var(--font-body);
-        padding: 0; text-decoration: underline;
+      .scqp-quiz-qs {
+        font-size: 0.76rem; color: var(--slate); flex-shrink: 0;
       }
     `;
     document.head.appendChild(s);
   }
 
-  // ── Build / rebuild the whole picker block ───────────────────
-  // Remove old wrap so it's always freshly built with latest quizzes
-  document.getElementById('scqp-wrap')?.remove();
-
-  const wrap = document.createElement('div');
-  wrap.id = 'scqp-wrap';
-
-  // Anchor: insert right after the element containing share-chapter-count
-  const countAnchor = document.getElementById('share-chapter-count');
-  const anchorParent = countAnchor?.closest('p, div, span') || countAnchor?.parentElement;
-  if (anchorParent) {
-    anchorParent.insertAdjacentElement('afterend', wrap);
-  } else {
-    // Last resort: prepend inside modal-card
-    const mc = document.querySelector('#modal-share-chapter .modal-card');
-    if (mc) mc.prepend(wrap);
-  }
-
-  // Always rebuild inner HTML so quizzes are fresh each open
+  // ── Update folder name & count ───────────────────────────────
   const qCount  = quizzesCache.length;
   const totalQs = quizzesCache.reduce((sum, q) => sum + (Array.isArray(q.questions) ? q.questions.length : 0), 0);
-
-  wrap.innerHTML = `
-    <p style="font-size:0.8rem;color:var(--slate);margin:0 0 0.4rem">
-      <strong style="color:var(--ink)">What to share:</strong>
-    </p>
-    <div class="scqp-seg">
-      <button class="scqp-seg-btn active" id="scqp-btn-all">📁 Entire Folder</button>
-      <button class="scqp-seg-btn" id="scqp-btn-pick">☑ Pick Quizzes</button>
-    </div>
-    <div id="scqp-quiz-list" style="display:none">
-      <div class="scqp-selectall-bar">
-        <button id="scqp-toggle-all">Select all</button>
-      </div>
-      ${quizzesCache.length === 0
-        ? '<p style="font-size:.82rem;color:var(--slate);padding:.6rem .9rem">No quizzes in this folder.</p>'
-        : quizzesCache.map(q => {
-            const n = Array.isArray(q.questions) ? q.questions.length : 0;
-            return `
-              <label class="scqp-quiz-row">
-                <input type="checkbox" class="scqp-quiz-cb"
-                  data-quiz-id="${q.id}" data-quiz-title="${escHtml(q.title)}" checked>
-                <span class="scqp-quiz-icon">📝</span>
-                <span class="scqp-quiz-info">
-                  <span class="scqp-quiz-title">${escHtml(q.title)}</span>
-                  <span class="scqp-quiz-count">${n} question${n !== 1 ? 's' : ''}</span>
-                </span>
-              </label>`;
-          }).join('')
-      }
-    </div>
-  `;
-
-  // Segment control toggle
-  const btnAll  = document.getElementById('scqp-btn-all');
-  const btnPick = document.getElementById('scqp-btn-pick');
-  const quizList = document.getElementById('scqp-quiz-list');
-
-  btnAll.addEventListener('click', () => {
-    btnAll.classList.add('active');
-    btnPick.classList.remove('active');
-    quizList.style.display = 'none';
-  });
-  btnPick.addEventListener('click', () => {
-    btnPick.classList.add('active');
-    btnAll.classList.remove('active');
-    quizList.style.display = 'block';
-  });
-
-  // Select all / deselect all toggle
-  let allSelected = true;
-  document.getElementById('scqp-toggle-all')?.addEventListener('click', () => {
-    allSelected = !allSelected;
-    wrap.querySelectorAll('.scqp-quiz-cb').forEach(cb => cb.checked = allSelected);
-    document.getElementById('scqp-toggle-all').textContent = allSelected ? 'Select all' : 'Deselect all';
-  });
-
-  // ── Update folder name & count ───────────────────────────────
-  const nameEl = document.getElementById('share-chapter-name');
-  if (nameEl) nameEl.textContent = folder.name;
+  const nameEl  = document.getElementById('share-chapter-name');
   const countEl = document.getElementById('share-chapter-count');
+  if (nameEl)  nameEl.textContent  = folder.name;
   if (countEl) countEl.textContent = `${qCount} quizzes · ${totalQs} questions`;
 
   // Link tab
   const linkInput = document.getElementById('share-chapter-link-input');
   if (linkInput) linkInput.value = location.origin + '?chapter=' + folder.id;
+
+  // ── Inject picker BEFORE .share-tabs ────────────────────────
+  // Always remove old so quizzes refresh each open
+  document.getElementById('scqp-wrap')?.remove();
+  const shareTabs = document.querySelector('#modal-share-chapter .share-tabs');
+  if (!shareTabs) return; // safety
+
+  const wrap = document.createElement('div');
+  wrap.id = 'scqp-wrap';
+  shareTabs.insertAdjacentElement('beforebegin', wrap);
+
+  // Build inner HTML
+  const quizRowsHtml = quizzesCache.length === 0
+    ? `<p style="font-size:.82rem;color:var(--slate);padding:.6rem .8rem">No quizzes in this folder.</p>`
+    : quizzesCache.map(q => {
+        const n = Array.isArray(q.questions) ? q.questions.length : 0;
+        return `<label class="scqp-quiz-row">
+          <input type="checkbox" class="scqp-quiz-cb"
+            data-quiz-id="${q.id}" data-quiz-title="${escHtml(q.title)}" checked>
+          <span class="scqp-quiz-name">${escHtml(q.title)}</span>
+          <span class="scqp-quiz-qs">${n} Qs</span>
+        </label>`;
+      }).join('');
+
+  wrap.innerHTML = `
+    <p class="scqp-section-label">What to share</p>
+    <div class="scqp-seg">
+      <button class="scqp-seg-btn scqp-active" id="scqp-btn-all">📁 Entire Folder</button>
+      <button class="scqp-seg-btn" id="scqp-btn-pick">☑️ Pick Quizzes</button>
+    </div>
+    <div id="scqp-quiz-list" style="display:none">
+      <div class="scqp-topbar">
+        <span>${quizzesCache.length} quiz${quizzesCache.length !== 1 ? 'zes' : ''}</span>
+        <button class="scqp-topbar-toggle" id="scqp-toggle-all">Deselect all</button>
+      </div>
+      <div class="scqp-scroll">${quizRowsHtml}</div>
+    </div>
+  `;
+
+  // Segment button events
+  document.getElementById('scqp-btn-all').addEventListener('click', () => {
+    document.getElementById('scqp-btn-all').classList.add('scqp-active');
+    document.getElementById('scqp-btn-pick').classList.remove('scqp-active');
+    document.getElementById('scqp-quiz-list').style.display = 'none';
+  });
+  document.getElementById('scqp-btn-pick').addEventListener('click', () => {
+    document.getElementById('scqp-btn-pick').classList.add('scqp-active');
+    document.getElementById('scqp-btn-all').classList.remove('scqp-active');
+    document.getElementById('scqp-quiz-list').style.display = 'block';
+  });
+
+  // Select / Deselect all
+  let allChecked = true;
+  document.getElementById('scqp-toggle-all').addEventListener('click', () => {
+    allChecked = !allChecked;
+    wrap.querySelectorAll('.scqp-quiz-cb').forEach(cb => cb.checked = allChecked);
+    document.getElementById('scqp-toggle-all').textContent = allChecked ? 'Deselect all' : 'Select all';
+  });
 
   // ── Friends list ─────────────────────────────────────────────
   const list    = document.getElementById('share-chapter-friend-list');
