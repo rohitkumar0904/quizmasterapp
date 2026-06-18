@@ -1,4720 +1,5529 @@
-// v2.1 race-history-fix
-/* ============================================================
-   QuizMaster Pro — supabase.js
-   Full Supabase backend integration.
-
-   SETUP:
-   1. Create a project at https://supabase.com
-   2. Run supabase_schema.sql in your SQL Editor
-   3. Replace SUPABASE_URL and SUPABASE_ANON_KEY below
-   ============================================================ */
-
-// ── CONFIG — replace with your Supabase project values ──────
-const SUPABASE_URL      = 'https://ycxpcmfabtispwarqfee.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljeHBjbWZhYnRpc3B3YXJxZmVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNjk4MjcsImV4cCI6MjA5Njg0NTgyN30.6X6QWD73cWPIfILNWK7VwKHoPeeiA40XEBBCtIeD074';
-
-// ── CLIENT ──────────────────────────────────────────────────
-const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-window.sb = sb; // expose for pomodoro-race.js
-
-// ── CURRENT SESSION ─────────────────────────────────────────
-let currentUser    = null;  // auth.User
-let currentProfile = null;  // profiles row
-
-// ── TOAST HELPER ────────────────────────────────────────────
-function toast(msg, type = 'info') {
-  const el = document.createElement('div');
-  el.className = `qm-toast qm-toast--${type}`;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('qm-toast--show'));
-  setTimeout(() => {
-    el.classList.remove('qm-toast--show');
-    setTimeout(() => el.remove(), 300);
-  }, 3000);
-}
-
-// Inject toast styles (no extra CSS file needed)
-(function injectToastCSS() {
-  const s = document.createElement('style');
-  s.textContent = `
-    .qm-toast {
-      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(4rem);
-      background: var(--ink); color: #fff; padding: .6rem 1.25rem;
-      border-radius: var(--radius-md); font-size: .85rem; font-family: var(--font-body);
-      z-index: 9999; opacity: 0; transition: all .3s ease; white-space: nowrap;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-    .qm-toast--show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .qm-toast--success { background: var(--success); }
-    .qm-toast--error   { background: var(--error); }
-    .qm-toast--info    { background: var(--ink-soft); }
-    .btn-loading { opacity: .6; pointer-events: none; }
-    .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.4);
-      border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .review-tag--skipped { background: #f0f4ff; color: #6b7280; }
-  `;
-  document.head.appendChild(s);
-})();
-
-function setLoading(btn, loading, label = '') {
-  if (!btn) return;
-  if (loading) {
-    btn._origText = btn.textContent;
-    btn.innerHTML = `<span class="spinner"></span>${label || btn._origText}`;
-    btn.classList.add('btn-loading');
-  } else {
-    btn.textContent = btn._origText || label;
-    btn.classList.remove('btn-loading');
-  }
+/* =========================================================
+   QuizMaster Pro — Design Tokens
+   Palette: Ink navy, paper cream, saffron accent
+   Type: Fraunces (display) + Inter (body) + JetBrains Mono (data)
+   ========================================================= */
+
+:root {
+  --ink: #1B2A4A;
+  --ink-soft: #2E4066;
+  --paper: #FAF6EE;
+  --paper-raised: #FFFFFF;
+  --saffron: #E8932E;
+  --saffron-soft: #FBE3C5;
+  --success: #3E8E5A;
+  --success-soft: #E1F0E6;
+  --error: #C0463C;
+  --error-soft: #FBE6E3;
+  --slate: #6B7785;
+  --line: #E4DDD0;
+  --line-strong: #C9C0AC;
+
+  --font-display: "Fraunces", serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-card: 0 1px 2px rgba(27, 42, 74, 0.06), 0 4px 16px rgba(27, 42, 74, 0.05);
+  --shadow-modal: 0 12px 40px rgba(27, 42, 74, 0.25);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+em { font-style: italic; color: var(--saffron); }
+
+p { margin: 0; }
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* =========================================================
+   Views — simple show/hide router
+   ========================================================= */
+.view { display: none; }
+.view.active { display: block; }
+
+.view--auth { display: flex; }
+.view--auth.active { display: flex; }
+
+/* =========================================================
+   Buttons
+   ========================================================= */
+.btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+   margin-right: 5px;
+}
+
+.btn--primary {
+  background: var(--saffron);
+  color: var(--ink);
+  box-shadow: 0 2px 0 rgba(27,42,74,0.15);
+}
+.btn--primary:hover { background: #DD8520; transform: translateY(-1px); }
+.btn--primary:active { transform: translateY(0); box-shadow: none; }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.btn--ghost:hover { background: var(--paper-raised); border-color: var(--ink); }
+
+.btn--small { padding: 0.4rem 0.85rem; font-size: 0.8rem; }
+.btn--large { padding: 0.9rem 1.5rem; font-size: 1rem; }
+.btn--block { width: 100%; display: block; text-align: center; }
+
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--slate);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 0.4rem;
+  display: inline-block;
+}
+.btn-back:hover { color: var(--ink); }
+
+/* =========================================================
+   AUTH SCREEN
+   ========================================================= */
+.view--auth {
+  min-height: 100vh;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(232,147,46,0.18), transparent 35%),
+    radial-gradient(circle at 85% 85%, rgba(232,147,46,0.12), transparent 40%);
+  padding: 1.5rem;
+}
+
+.auth-card {
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow-modal);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  background: var(--ink);
+  color: var(--saffron);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.brand h1 {
+  font-size: 1.5rem;
+  color: #EDE6D8;
+}
+
+.auth-tag {
+  color: var(--slate);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.auth-tabs {
+  display: flex;
+  background: var(--paper-raised);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  padding: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0.55rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--slate);
+}
+
+.tab-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.auth-form { display: none; flex-direction: column; gap: 1rem; }
+.auth-form.active { display: flex; }
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.auth-form input {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.auth-form input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--saffron);
+  outline-offset: 1px;
+  border-color: var(--saffron);
+}
+
+.auth-alt {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--slate);
+  margin-top: 0.25rem;
+}
+
+.auth-alt a { color: var(--saffron); font-weight: 600; text-decoration: none; }
+
+/* =========================================================
+   APP SHELL
+   ========================================================= */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+
+}body {
+  overflow-x: hidden;
 }
+
+
+/* Sidebar */
+.sidebar {
+  width: 240px;
+  background: #1B2A4A;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  align-self: flex-start;
+  padding: 1rem 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.sidebar-title { font-size: 1.05rem; color: #EDE6D8; }
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-sm);
+  color: rgba(237,230,216,0.7);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.15s ease;
+}
+
+.nav-link:hover { background: rgba(255,255,255,0.06); color: #EDE6D8; }
+
+.nav-link.active {
+  background: var(--saffron);
+  color: #1B2A4A;
+}
+
+.nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
+
+.sidebar-bottom {
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.user-badge {
+  background: rgba(255,255,255,0.05);
+  border: 1px dashed rgba(232,147,46,0.4);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+}
+
+.user-rollno {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--saffron);
+  margin-bottom: 0.25rem;
+}
+
+.rollno-label { color: rgba(237,230,216,0.5); }
+
+.user-name { font-size: 0.85rem; font-weight: 600; color: #EDE6D8; }
 
-// ── AUTH ─────────────────────────────────────────────────────
-
-async function handleLogin(e) {
-  e.preventDefault();
-  const form  = e.target;
-  const email = form.email.value.trim();
-  const pass  = form.password.value;
-  const btn   = form.querySelector('[type=submit]');
-  setLoading(btn, true, 'Logging in…');
-
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-  setLoading(btn, false);
-
-  if (error) { toast('Login failed: ' + error.message, 'error'); return; }
-  // onSignedIn called by onAuthStateChange SIGNED_IN event
-}
-
-async function handleSignup(e) {
-  e.preventDefault();
-  const form = e.target;
-  const name = form.name.value.trim();
-  const email = form.email.value.trim();
-  const pass  = form.password.value;
-  const btn   = form.querySelector('[type=submit]');
-
-  if (pass.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
-  setLoading(btn, true, 'Creating account…');
-
-  const { data, error } = await sb.auth.signUp({
-    email, password: pass,
-    options: { data: { display_name: name } }
-  });
-  setLoading(btn, false);
-
-  if (error) { toast('Sign-up failed: ' + error.message, 'error'); return; }
-
-  // Supabase returns a user object with an empty identities array (no error)
-  // when the email is already registered — this prevents email-enumeration
-  // attacks, so we detect it manually and tell the person to log in instead.
-  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-    toast('This email is already registered. Please log in instead.', 'error');
-    switchTab('login');
-    return;
-  }
+.sidebar-bottom .btn--ghost {
+  color: #EDE6D8;
+  border-color: rgba(255,255,255,0.2);
+}
+.sidebar-bottom .btn--ghost:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.4);
+  color: #EDE6D8;
+}
+
+/* Mobile bottom nav */
+.mobile-nav {
+  display: none;
+}
+
+/* =========================================================
+   MAIN CONTENT
+   ========================================================= */
+.main {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 2rem 2.5rem;
+  max-width: 1100px;
+  overflow-x: hidden;
+  margin-left: 240px;
+}
+
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.75rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.view-header--tight { margin-bottom: 1.25rem; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--saffron);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.view-header h2 { font-size: 1.8rem; }
 
-  // IMPORTANT: data.user is returned even when email confirmation is still
-  // pending — only data.session tells us the account is actually
-  // authenticated. Checking data.user alone (the old bug) let unverified
-  // users into the app shell with no real session, so Supabase calls
-  // (like creating a folder) silently failed under RLS.
-  if (data.session) {
-    // onSignedIn called by onAuthStateChange SIGNED_IN event
-  } else {
-    toast('Account created! Check your email to verify before logging in.', 'success');
-    form.reset();
-    switchTab('login');
-  }
+/* =========================================================
+   FOLDER GRID
+   ========================================================= */
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.folder-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.folder-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(27,42,74,0.1);
+}
+
+.folder-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.folder-icon { font-size: 1.5rem; }
+
+.folder-count {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--slate);
+  background: var(--paper);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
 }
 
-async function handleLogout() {
-  await sb.auth.signOut();
-  currentUser = null;
-  currentProfile = null;
-  document.getElementById('app-shell').style.display = 'none';
-  // Hide fixed-position elements that leak outside app-shell on logout
-  ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
-    document.querySelectorAll(sel).forEach(el => el.style.display = 'none');
-  });
-  const auth = document.getElementById('view-auth');
-  auth.style.display = 'flex';
-  auth.classList.add('active');
-  toast('Logged out.', 'info');
-}
-
-
-async function onSignedIn(user) {
-  currentUser = user;
-  await loadProfile();
-  document.getElementById('view-auth').style.display = 'none';
-  document.getElementById('app-shell').style.display = 'flex';
-  // Restore fixed elements hidden on logout
-  ['.mobile-topbar', '.mobile-nav', '.global-search-bar', '.sidebar', '.sidebar-backdrop'].forEach(sel => {
-    document.querySelectorAll(sel).forEach(el => el.style.display = '');
-  });
-  populateUI();
-  await Promise.all([
-    loadFolders(),
-    loadInbox(),
-    loadPins(),
-  ]);
-  loadFriends(); // non-blocking
-  showView('dashboard');
-}
-
-async function loadProfile() {
-  if (!currentUser) return;
-  let { data, error } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
-  if (error || !data) {
-    // Create if missing (edge case)
-    const name = currentUser.user_metadata?.display_name || 'User';
-    const { data: newProfile } = await sb.from('profiles').insert({
-      id: currentUser.id,
-      display_name: name,
-      roll_no: null
-    }).select().single();
-    data = newProfile;
-  }
-  currentProfile = data;
-}
-
-function populateUI() {
-  if (!currentProfile) return;
-  document.getElementById('user-name').textContent = currentProfile.display_name;
-  document.getElementById('user-rollno').textContent = currentProfile.roll_no || 'QM-0000';
-
-  // Profile view
-  const pName = document.getElementById('profile-display-name');
-  const pNameInput = document.getElementById('profile-display-name-input');
-  const pRoll = document.getElementById('profile-rollno');
-  const pRollInput = document.getElementById('profile-rollno-input');
-  const pEmail = document.getElementById('profile-email');
-  if (pName) pName.textContent = currentProfile.display_name;
-  if (pNameInput) pNameInput.value = currentProfile.display_name || '';
-  if (pRoll) pRoll.textContent = currentProfile.roll_no || 'Not set';
-  if (pRollInput) pRollInput.value = currentProfile.roll_no || '';
-  if (pEmail) pEmail.textContent = currentUser?.email || '';
-
-  const pAvatar = document.getElementById('profile-avatar');
-  if (pAvatar) {
-    const initials = (currentProfile.display_name || '?')
-      .split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
-    pAvatar.textContent = initials || '?';
-  }
+.folder-card h3 { font-size: 1.1rem; margin-bottom: 0.3rem; }
 
-  const pJoined = document.getElementById('profile-joined');
-  if (pJoined && currentProfile.created_at) {
-    pJoined.textContent = 'Member since ' + new Date(currentProfile.created_at)
-      .toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-  }
+.folder-meta { font-size: 0.78rem; color: var(--slate); }
 
-  // Theme — localStorage is the source of truth for this device (applied
-  // instantly on page load via the <head> script + oldstatic.js, so the
-  // UI never flashes). Only fall back to the value saved in Supabase if
-  // this device had no local preference before this page load (e.g. first
-  // login on a new device/browser).
-  if (typeof _hadStoredThemePref !== 'undefined' && !_hadStoredThemePref) {
-    if (currentProfile.theme === 'dark' && !darkMode) {
-      darkMode = true;
-      applyTheme();
-    } else if (currentProfile.theme === 'light' && darkMode) {
-      darkMode = false;
-      applyTheme();
-    }
-  }
+.folder-card-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 0.5rem;
+}
 
-  // Profile public toggle — sync checked state; applyProfileVisibility
-  // is defined in oldstatic.js and called automatically on change
-  const toggle = document.getElementById('toggle-profile-public');
-  if (toggle) {
-    toggle.checked = currentProfile.is_public;
-    // Call applyProfileVisibility if available (defined in oldstatic.js)
-    if (typeof applyProfileVisibility === 'function') applyProfileVisibility();
-  }
+.empty-state {
+  width: 100%;
+  padding: 1.5rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--slate);
+  background: var(--paper-soft);
+  text-align: center;
+}
 
-  const privateHint = document.getElementById('profile-private-hint');
-  if (privateHint) privateHint.style.display = currentProfile.is_public ? 'none' : 'block';
-}
-
-// ── PROFILE SAVE ─────────────────────────────────────────────
-async function saveProfile() {
-  if (!currentUser || !currentProfile) return;
-  const nameInput = document.getElementById('profile-display-name-input');
-  const newName = (nameInput?.value || '').trim() || currentProfile.display_name;
-  const rollInput = document.getElementById('profile-rollno-input');
-  const newRoll = (rollInput?.value || '').trim();
-
-  if (!newName) { toast('Name cannot be empty.', 'error'); return; }
-
-  const { error } = await sb.from('profiles').update({
-    display_name: newName,
-    roll_no: newRoll || null,
-    is_public: document.getElementById('toggle-profile-public')?.checked ?? true,
-    theme: darkMode ? 'dark' : 'light'
-  }).eq('id', currentUser.id);
-
-  if (error) {
-    // Postgres unique-constraint violation
-    if (error.code === '23505') {
-      toast('That roll number is already taken. Try another one.', 'error');
-    } else {
-      toast('Could not save profile: ' + error.message, 'error');
-    }
-    return;
-  }
-  currentProfile.display_name = newName;
-  currentProfile.roll_no = newRoll || null;
-  populateUI();
-  exitFieldEditMode('profile-display-name', 'profile-display-name-input');
-  exitFieldEditMode('profile-rollno', 'profile-rollno-input');
-  toast('Profile saved!', 'success');
-}
-
-function exitFieldEditMode(displayId, inputId) {
-  const display = document.getElementById(displayId);
-  const input    = document.getElementById(inputId);
-  if (display) display.style.display = '';
-  if (input)   input.style.display   = 'none';
-}
-
-function enterFieldEditMode(displayId, inputId) {
-  const display = document.getElementById(displayId);
-  const input    = document.getElementById(inputId);
-  if (!display || !input) return;
-  display.style.display = 'none';
-  input.style.display   = 'inline-block';
-  input.focus();
-  input.select();
-}
-
-document.getElementById('btn-edit-displayname')?.addEventListener('click', () => {
-  enterFieldEditMode('profile-display-name', 'profile-display-name-input');
-});
-document.getElementById('btn-edit-rollno')?.addEventListener('click', () => {
-  enterFieldEditMode('profile-rollno', 'profile-rollno-input');
-});
-
-document.getElementById('profile-display-name-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); saveProfile(); }
-});
-document.getElementById('profile-rollno-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); saveProfile(); }
-});
-
-// ── THEME PERSISTENCE ────────────────────────────────────────
-async function persistTheme() {
-  if (!currentUser) return;
-  await sb.from('profiles').update({ theme: darkMode ? 'dark' : 'light' }).eq('id', currentUser.id);
-}
-
-// ── FOLDERS ──────────────────────────────────────────────────
-let foldersCache = [];  // array of folder rows
-let groupsCache  = [];  // array of group rows
-
-async function loadGroups() {
-  if (!currentUser) return;
-  const { data } = await sb.from('groups')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('sort_order', { ascending: true });
-  groupsCache = data || [];
-}
-
-function getDescendantFolderIds(parentId) {
-  const result = [];
-  const queue = [parentId];
-  while (queue.length) {
-    const curr = queue.shift();
-    foldersCache.filter(f => f.parent_id === curr).forEach(f => { result.push(f.id); queue.push(f.id); });
-  }
-  return result;
-}
-
-async function loadFolders() {
-  if (!currentUser) return;
-  await loadGroups();
-  const { data, error } = await sb.from('folders')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('name', { ascending: true });
-  if (error) { toast('Could not load folders', 'error'); return; }
-  foldersCache = data || [];
-  renderFolders();
-}
-
-function renderFolders() {
-  const grid = document.getElementById('folder-grid');
-  if (!grid) return;
-
-  grid.querySelectorAll('.folder-card[data-folder-id], .folder-card--back, .folder-group-section').forEach(el => el.remove());
-
-  const rootFolders = foldersCache.filter(f => !f.parent_id);
-
-  if (groupsCache.length === 0) {
-    rootFolders.forEach(folder => renderFolderCard(folder, grid, true));
-  } else {
-    // Render grouped folders
-    groupsCache.forEach(group => {
-      const inGroup = rootFolders.filter(f => f.group_id === group.id);
-      if (!inGroup.length) return;
-
-      const section = document.createElement('div');
-      section.className = 'folder-group-section';
-      section.dataset.groupId = group.id;
-      section.innerHTML =
-        '<div class="folder-group-header">' +
-          '<h3 class="folder-group-title">' + escHtml(group.name) + '</h3>' +
-          '<button class="btn btn--ghost btn--small btn-delete-group" data-group-id="' + group.id + '" title="Delete group">\uD83D\uDDD1\uFE0F</button>' +
-        '</div>' +
-        '<div class="folder-group-grid" data-group-grid="' + group.id + '"></div>';
-
-      section.querySelector('.btn-delete-group').addEventListener('click', async e => {
-        e.stopPropagation();
-        if (!confirm('Delete group "' + group.name + '"? Folders will be ungrouped.')) return;
-        await sb.from('groups').delete().eq('id', group.id);
-        foldersCache.forEach(f => { if (f.group_id === group.id) f.group_id = null; });
-        groupsCache = groupsCache.filter(g => g.id !== group.id);
-        renderFolders();
-        toast('Group deleted.', 'info');
-      });
-
-      const addCard = grid.querySelector('.folder-card--add');
-      grid.insertBefore(section, addCard);
-
-      const groupGrid = section.querySelector('[data-group-grid="' + group.id + '"]');
-      inGroup.forEach(folder => renderFolderCard(folder, groupGrid, false));
-    });
-
-    // Ungrouped folders
-    const ungrouped = rootFolders.filter(f => !f.group_id);
-    if (ungrouped.length) {
-      const section = document.createElement('div');
-      section.className = 'folder-group-section';
-      section.innerHTML =
-        '<div class="folder-group-header">' +
-          '<h3 class="folder-group-title" style="color:var(--text-muted,#888)">Ungrouped</h3>' +
-        '</div>' +
-        '<div class="folder-group-grid" id="ungrouped-grid"></div>';
-      const addCard = grid.querySelector('.folder-card--add');
-      grid.insertBefore(section, addCard);
-      ungrouped.forEach(folder => renderFolderCard(folder, section.querySelector('#ungrouped-grid'), false));
-    }
-  }
+.empty-state h3 {
+  margin-bottom: 0.35rem;
+  color: var(--ink);
+}
 
-  updateSaveFolderSelect();
-  updateTargetFolderSelect();
-}
-
-function renderFolderCard(folder, container, insertBefore) {
-  const hasChildren = foldersCache.some(f => f.parent_id === folder.id);
-  const card = document.createElement('div');
-  card.className = 'folder-card' + (folder.is_pinned ? ' folder-card--pinned' : '');
-  card.dataset.folderId = folder.id;
-
-  const groupOptions = groupsCache.map(g =>
-    '<option value="' + g.id + '"' + (folder.group_id === g.id ? ' selected' : '') + '>' + escHtml(g.name) + '</option>'
-  ).join('');
-
-  card.innerHTML =
-    '<div class="folder-card-top">' +
-      '<button class="btn-pin ' + (folder.is_pinned ? 'active' : '') + '" data-item-type="folder" data-item-id="' + folder.id + '" data-item-name="' + escHtml(folder.name) + '" data-item-meta="Folder" title="' + (folder.is_pinned ? 'Unpin' : 'Pin') + ' folder">\uD83D\uDCCC</button>' +
-      '<button class="btn-toggle-visibility" title="' + (folder.is_public ? 'Make Private' : 'Make Public') + '">' + (folder.is_public ? '\uD83D\uDD12 Private' : '\uD83C\uDF10 Public') + '</button>' +
-    '</div>' +
-    '<span class="folder-icon">' + (hasChildren ? '\uD83D\uDCC2' : '\uD83D\uDCC1') + '</span>' +
-    '<h3>' + escHtml(folder.name) + '</h3>' +
-    '<span class="folder-count" id="folder-count-' + folder.id + '">Loading\u2026</span>' +
-    (groupsCache.length ?
-      '<select class="folder-group-select" title="Move to group"><option value="">\u2014 No group \u2014</option>' + groupOptions + '</select>'
-      : '') +
-    '<div class="folder-card-actions">' +
-      '<button class="btn btn--ghost btn--small btn-add-subfolder" data-folder-id="' + folder.id + '" title="Add subfolder">\uD83D\uDCC1+</button>' +
-      '<button class="btn btn--ghost btn--small btn-rename-folder" data-folder-id="' + folder.id + '">\u270F\uFE0F</button>' +
-      '<button class="btn btn--ghost btn--small btn-delete-folder" data-folder-id="' + folder.id + '">\uD83D\uDDD1\uFE0F</button>' +
-    '</div>' +
-    '<span class="visibility-badge ' + (folder.is_public ? 'visibility-badge--public' : '') + '" data-visibility-badge>' + (folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private') + '</span>';
-
-  card.addEventListener('click', e => {
-    if (e.target.closest('.btn-pin, .btn-toggle-visibility, .btn-rename-folder, .btn-delete-folder, .btn-add-subfolder, .folder-group-select')) return;
-    openFolder(folder.id, folder.name);
-  });
-
-  // Group select
-  const sel = card.querySelector('.folder-group-select');
-  if (sel) {
-    sel.addEventListener('change', async e => {
-      e.stopPropagation();
-      const gid = e.target.value || null;
-      await sb.from('folders').update({ group_id: gid }).eq('id', folder.id);
-      folder.group_id = gid;
-      renderFolders();
-    });
-  }
+.folder-card--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px dashed var(--line-strong);
+  background: transparent;
+  box-shadow: none;
+  color: var(--slate);
+  font-weight: 600;
+  min-height: 100px;
+}
+
+.folder-card--add:hover {
+  border-color: var(--saffron);
+  color: var(--saffron);
+  background: var(--saffron-soft);
+}
 
-  card.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
-    e.stopPropagation();
-    const newVal = !folder.is_public;
-    const descIds = getDescendantFolderIds(folder.id);
-    const allFolderIds = [folder.id, ...descIds];
-    const { error } = await sb.from('folders').update({ is_public: newVal }).in('id', allFolderIds);
-    if (error) { toast('Could not update visibility: ' + error.message, 'error'); return; }
-    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = newVal; });
-    await sb.from('quizzes').update({ is_public: newVal }).in('folder_id', allFolderIds);
-    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = newVal; });
-    const badge = card.querySelector('[data-visibility-badge]');
-    badge.textContent = folder.is_public ? '\uD83C\uDF10 Public' : '\uD83D\uDD12 Private';
-    badge.className = 'visibility-badge' + (folder.is_public ? ' visibility-badge--public' : '');
-    card.querySelector('.btn-toggle-visibility').textContent = folder.is_public ? '\uD83D\uDD12 Make Private' : '\uD83C\uDF10 Make Public';
-    buildPublicLibrary();
-  });
-
-  card.querySelector('.btn-add-subfolder').addEventListener('click', async e => {
-    e.stopPropagation();
-    const subName = prompt('New subfolder name:');
-    if (!subName || !subName.trim()) return;
-    const { data: sub, error } = await sb.from('folders').insert({
-      user_id: currentUser.id,
-      name: subName.trim(),
-      parent_id: folder.id
-    }).select().single();
-    if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
-    foldersCache.unshift(sub);
-    toast('Subfolder created!', 'success');
-    renderFolders();
-  });
-
-  card.querySelector('.btn-rename-folder').addEventListener('click', async e => {
-    e.stopPropagation();
-    const newName = prompt('Rename folder:', folder.name);
-    if (!newName || !newName.trim()) return;
-    await sb.from('folders').update({ name: newName.trim() }).eq('id', folder.id);
-    folder.name = newName.trim();
-    card.querySelector('h3').textContent = newName.trim();
-    toast('Folder renamed!', 'success');
-  });
-
-  card.querySelector('.btn-delete-folder').addEventListener('click', async e => {
-    e.stopPropagation();
-    if (!confirm('Delete folder "' + folder.name + '"? All subfolders and quizzes inside will also be deleted.')) return;
-    await sb.from('folders').delete().eq('id', folder.id);
-    foldersCache = foldersCache.filter(f => f.id !== folder.id && f.parent_id !== folder.id);
-    card.remove();
-    toast('Folder deleted.', 'info');
-  });
-
-  if (insertBefore) {
-    const addCard = container.querySelector('.folder-card--add');
-    container.insertBefore(card, addCard);
-  } else {
-    container.appendChild(card);
-  }
-  loadFolderCount(folder.id);
-}
-
-async function loadFolderCount(folderId) {
-  const subCount = foldersCache.filter(f => f.parent_id === folderId).length;
-  const { count } = await sb.from('quizzes')
-    .select('*', { count: 'exact', head: true })
-    .eq('folder_id', folderId);
-  const el = document.getElementById('folder-count-' + folderId);
-  if (el) {
-    const parts = [];
-    if (subCount) parts.push(subCount + ' subfolder' + (subCount > 1 ? 's' : ''));
-    parts.push((count || 0) + ' quiz' + (count === 1 ? '' : 'zes'));
-    el.textContent = parts.join(' \u00B7 ');
-  }
+.folder-card--add .folder-icon { font-size: 1.8rem; }
+
+/* =========================================================
+   QUIZ LIST — "Exam Slip" cards
+   ========================================================= */
+.quiz-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
-async function createFolder(name, silent, parentId = null) {
-  if (!currentUser) return null;
-  const tempId = 'temp-' + Date.now();
-  const tempFolder = { id: tempId, user_id: currentUser.id, name: name.trim(), parent_id: parentId || null, is_public: false, _pending: true };
-  foldersCache.unshift(tempFolder);
-  renderFolders();
-  if (!silent) toast('Folder created!', 'success');
-  const { data, error } = await sb.from('folders').insert({
-    user_id: currentUser.id,
-    name: name.trim(),
-    parent_id: parentId || null
-  }).select().single();
-  if (error) {
-    toast('Could not save folder: ' + error.message, 'error');
-    foldersCache = foldersCache.filter(f => f.id !== tempId);
-    renderFolders();
-    return null;
-  }
-  const idx = foldersCache.findIndex(f => f.id === tempId);
-  if (idx !== -1) foldersCache[idx] = data;
-  return data;
+.quiz-slip {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--saffron);
+  border-radius: var(--radius-md);
+  padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow-card);
 }
 
+.quiz-slip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
 
+.quiz-slip-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--saffron);
+  font-weight: 700;
+}
 
-// ── CURRENT OPEN FOLDER ──────────────────────────────────────
-let activeFolderId   = null;
-let activeFolderName = '';
-let quizzesCache     = [];
+.quiz-slip-id {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--slate);
+}
+
+.quiz-slip h3 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+
+.quiz-slip-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--slate);
+  margin-bottom: 0.9rem;
+}
 
-// Folder navigation path stack: [{id, name}]
-let folderPathStack = [];
+.dot { color: var(--line-strong); }
 
-function buildFolderPath(folderId) {
-  // Build full path from foldersCache by walking parent_id chain
-  const path = [];
-  let current = foldersCache.find(f => f.id === folderId);
-  while (current) {
-    path.unshift({ id: current.id, name: current.name, parentId: current.parent_id });
-    current = current.parent_id ? foldersCache.find(f => f.id === current.parent_id) : null;
-  }
-  return path;
-}
-
-function renderBreadcrumb(pathArr) {
-  const nav = document.getElementById('folder-breadcrumb');
-  if (!nav) return;
-  nav.innerHTML = '';
-
-  // Root crumb
-  const rootSpan = document.createElement('span');
-  rootSpan.className = 'breadcrumb-item breadcrumb-link';
-  rootSpan.textContent = 'Root';
-  rootSpan.addEventListener('click', () => {
-    folderPathStack = [];
-    showView('dashboard');
-  });
-  nav.appendChild(rootSpan);
-
-  pathArr.forEach((crumb, idx) => {
-    const sep = document.createElement('span');
-    sep.className = 'breadcrumb-sep';
-    sep.textContent = '/';
-    nav.appendChild(sep);
-
-    const span = document.createElement('span');
-    if (idx === pathArr.length - 1) {
-      span.className = 'breadcrumb-item breadcrumb-current';
-      span.textContent = crumb.name;
-    } else {
-      span.className = 'breadcrumb-item breadcrumb-link';
-      span.textContent = crumb.name;
-      span.addEventListener('click', () => {
-        openFolder(crumb.id, crumb.name, crumb.parentId);
-      });
-    }
-    nav.appendChild(span);
-  });
-}
-
-async function openFolder(folderId, folderName, parentFolderId) {
-  activeFolderId = folderId;
-  activeFolderName = folderName;
-
-  // Update folder view header
-  const titleEl = document.getElementById('folder-title') || document.getElementById('folder-view-name');
-  if (titleEl) titleEl.textContent = folderName;
-
-  // Back button — go to parent folder or dashboard
-  const backBtn = document.querySelector('#view-folder .btn-back');
-  if (backBtn) {
-    if (parentFolderId) {
-      const parentFolder = foldersCache.find(f => f.id === parentFolderId);
-      backBtn.textContent = '<- ' + (parentFolder?.name || 'Back');
-      backBtn.removeAttribute('data-back');
-      backBtn.onclick = () => openFolder(parentFolderId, parentFolder?.name || 'Back', parentFolder?.parent_id ?? null);
-    } else {
-      backBtn.textContent = '<- Folders';
-      backBtn.onclick = null;
-      backBtn.setAttribute('data-back', 'dashboard');
-    }
-  }
+.quiz-slip-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 
-  // Build and render breadcrumb path
-  const pathArr = buildFolderPath(folderId);
-  renderBreadcrumb(pathArr);
-
-  showView('folder');
-  await renderSubfolders(folderId);
-  await loadQuizzes(folderId);
-}
-
-async function renderSubfolders(parentFolderId) {
-  const list = document.getElementById('quiz-list');
-  if (!list) return;
-
-  list.querySelectorAll('.subfolder-section, .quizzes-section-label').forEach(c => c.remove());
-
-  let subs = foldersCache.filter(f => f.parent_id === parentFolderId);
-  const parentInCache = foldersCache.find(f => f.id === parentFolderId);
-  const isOwnFolder = parentInCache ? parentInCache.user_id === currentUser?.id : false;
-  if (!isOwnFolder) {
-    const { data: dbSubs } = await sb.from('folders').select('id, name, parent_id, user_id, is_public').eq('parent_id', parentFolderId);
-    if (dbSubs?.length) {
-      dbSubs.forEach(f => { if (!foldersCache.find(c => c.id === f.id)) foldersCache.push(f); });
-      subs = dbSubs;
-    }
-  }
+/* =========================================================
+   CREATE / IMPORT
+   ========================================================= */
+.create-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  max-width: 700px;
+}
+
+.card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+}
 
-  if (subs.length) {
-    const section = document.createElement('div');
-    section.className = 'subfolder-section';
-
-    const heading = document.createElement('h3');
-    heading.className = 'folder-section-heading';
-    heading.innerHTML = '<span class="folder-section-icon">📂</span> Subfolders';
-    section.appendChild(heading);
-
-    const grid = document.createElement('div');
-    grid.className = 'subfolder-grid';
-
-    subs.forEach(sub => {
-      const card = document.createElement('article');
-      card.className = 'subfolder-card-new';
-      card.dataset.subId = sub.id;
-      card.innerHTML =
-        '<div class="subfolder-card-inner">' +
-          '<div class="subfolder-card-icons">' +
-            '<span class="subfolder-doc-icon">📄</span>' +
-            '<span class="subfolder-folder-icon">📁</span>' +
-          '</div>' +
-          '<div class="subfolder-card-name">' + escHtml(sub.name) + '</div>' +
-          '<div class="subfolder-card-count" id="sc-count-' + sub.id + '">Loading…</div>' +
-          '<div class="subfolder-card-actions">' +
-            '<button class="btn btn--ghost btn--small subfolder-btn-pin' + (pinnedItems?.has('folder-' + sub.id) ? ' active' : '') + '" data-sub-id="' + sub.id + '" title="' + (pinnedItems?.has('folder-' + sub.id) ? 'Unpin' : 'Pin') + '" style="' + (pinnedItems?.has('folder-' + sub.id) ? 'color:#f59e0b;font-weight:bold;' : 'opacity:0.5;') + '">📌</button>' +
-            '<button class="btn btn--ghost btn--small subfolder-btn-rename" data-sub-id="' + sub.id + '" title="Rename">✏️</button>' +
-            '<button class="btn btn--ghost btn--small subfolder-btn-delete" data-sub-id="' + sub.id + '" title="Delete">🗑️</button>' +
-          '</div>' +
-        '</div>';
-
-      card.querySelector('.subfolder-btn-pin').addEventListener('click', e => {
-        e.stopPropagation();
-        const btn = e.currentTarget;
-        const isPinned = pinnedItems?.has('folder-' + sub.id);
-        if (isPinned) {
-          if (typeof window.unpinItem === 'function') window.unpinItem('folder', sub.id);
-          btn.classList.remove('active');
-          btn.style.color = '';
-          btn.style.fontWeight = '';
-          btn.style.opacity = '0.5';
-          btn.title = 'Pin';
-        } else {
-          if (typeof window.pinItem === 'function') window.pinItem('folder', sub.id, sub.name, 'Subfolder');
-          btn.classList.add('active');
-          btn.style.color = '#f59e0b';
-          btn.style.fontWeight = 'bold';
-          btn.style.opacity = '1';
-          btn.title = 'Unpin';
-        }
-      });
-
-      card.querySelector('.subfolder-btn-rename').addEventListener('click', async e => {
-        e.stopPropagation();
-        const newName = prompt('Rename folder:', sub.name);
-        if (!newName || !newName.trim()) return;
-        const { error } = await sb.from('folders').update({ name: newName.trim() }).eq('id', sub.id);
-        if (error) { toast('Could not rename: ' + error.message, 'error'); return; }
-        sub.name = newName.trim();
-        const nameEl = card.querySelector('.subfolder-card-name');
-        if (nameEl) nameEl.textContent = newName.trim();
-        const cached = foldersCache.find(f => f.id === sub.id);
-        if (cached) cached.name = newName.trim();
-        toast('Folder renamed!', 'success');
-      });
-
-      card.querySelector('.subfolder-btn-delete').addEventListener('click', async e => {
-        e.stopPropagation();
-        if (!confirm('Delete folder "' + sub.name + '"? All quizzes inside will also be deleted.')) return;
-        const { error } = await sb.from('folders').delete().eq('id', sub.id);
-        if (error) { toast('Could not delete: ' + error.message, 'error'); return; }
-        foldersCache = foldersCache.filter(f => f.id !== sub.id && f.parent_id !== sub.id);
-        card.remove();
-        toast('Folder deleted.', 'info');
-      });
-
-      card.addEventListener('click', e => {
-        if (e.target.closest('.subfolder-btn-rename, .subfolder-btn-delete, .subfolder-btn-pin')) return;
-        openFolder(sub.id, sub.name, parentFolderId);
-      });
-      grid.appendChild(card);
-
-      (async () => {
-        const { count } = await sb.from('quizzes').select('id', { count: 'exact', head: true }).eq('folder_id', sub.id);
-        const el = document.getElementById('sc-count-' + sub.id);
-        if (el) el.textContent = (count || 0) + ' quiz(zes)';
-      })();
-    });
-
-    section.appendChild(grid);
-    list.insertBefore(section, list.firstChild);
-  }
+.card-title {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: var(--ink-soft);
+}
 
-  const quizLabel = document.createElement('div');
-  quizLabel.className = 'quizzes-section-label';
-  quizLabel.innerHTML = '<span class="folder-section-icon">❓</span> Quizzes in this Folder';
-  list.insertBefore(quizLabel, subs.length ? list.children[1] : list.firstChild);
-}
-async function loadQuizzes(folderId) {
-  const { data, error } = await sb.from('quizzes')
-    .select('id, title, is_public, is_pinned, created_at, questions')
-    .eq('folder_id', folderId)
-    .order('created_at', { ascending: false });
-  if (error && !data?.length) return;
-  quizzesCache = data || [];
-  renderQuizzes();
-}
-
-function renderQuizzes() {
-  const list = document.getElementById('quiz-list');
-  if (!list) return;
-
-  list.querySelectorAll('.quiz-slip[data-quiz-id]').forEach(s => s.remove());
-
-  quizzesCache.forEach(quiz => {
-    const qCount = Array.isArray(quiz.questions) ? quiz.questions.length : 0;
-    const slip = document.createElement('article');
-    slip.className = 'quiz-slip' + (quiz.is_pinned ? ' quiz-slip--pinned' : '');
-    slip.dataset.quizId = quiz.id;
-    slip.innerHTML = `
-      <div class="quiz-slip-top">
-        <span class="quiz-slip-title">
-          <h3>${escHtml(quiz.title)}</h3>
-        </span>
-        <div class="quiz-slip-controls">
-          <button class="btn-pin ${quiz.is_pinned ? 'active' : ''}"
-            data-item-type="quiz" data-item-id="${quiz.id}"
-            data-item-name="${escHtml(quiz.title)}" data-item-meta="${qCount} Qs"
-            title="${quiz.is_pinned ? 'Unpin' : 'Pin quiz'}">📌</button>
-          <button class="btn-toggle-visibility" title="${quiz.is_public ? 'Make Private' : 'Make Public'}">
-            ${quiz.is_public ? '🔒 Make Private' : '🌐 Make Public'}
-          </button>
-        </div>
-      </div>
-      <div class="quiz-slip-meta">
-        <span>${qCount} Questions</span>
-        <span>${new Date(quiz.created_at).toLocaleDateString('en-IN')}</span>
-      </div>
-      <span class="visibility-badge ${quiz.is_public ? 'visibility-badge--public' : ''}" data-visibility-badge>
-        ${quiz.is_public ? '🌐 Public' : '🔒 Private'}
-      </span>
-      <div class="quiz-slip-actions">
-        <button class="btn btn--primary btn--small btn-start-quiz-real" data-quiz-id="${quiz.id}">▶ Start Quiz</button>
-        <button class="btn btn--ghost btn--small btn-flashcard-quiz-real" data-quiz-id="${quiz.id}">⬡ Flashcards</button>
-        <button class="btn btn--ghost btn--small btn-pomodoro-quiz" data-quiz-id="${quiz.id}" title="Pomodoro">🍅</button>
-        <button class="btn btn--ghost btn--small btn-share-quiz-real" data-quiz-id="${quiz.id}">↗ Share</button>
-        <button class="btn btn--ghost btn--small btn-rename-quiz" data-quiz-id="${quiz.id}" title="Rename quiz">✏️</button>
-        <button class="btn btn--ghost btn--small btn-delete-quiz" data-quiz-id="${quiz.id}">🗑️</button>
-        <button class="btn btn--ghost btn--small btn-add-question" data-quiz-title="${escHtml(quiz.title)}" data-quiz-id="${quiz.id}">＋ Add Q</button>
-      </div>
-    `;
-
-    // Visibility toggle
-    slip.querySelector('.btn-toggle-visibility').addEventListener('click', async e => {
-      e.stopPropagation();
-      quiz.is_public = !quiz.is_public;
-      const badge = slip.querySelector('[data-visibility-badge]');
-      badge.textContent = quiz.is_public ? '🌐 Public' : '🔒 Private';
-      badge.className = `visibility-badge ${quiz.is_public ? 'visibility-badge--public' : ''}`;
-      slip.querySelector('.btn-toggle-visibility').textContent = quiz.is_public ? '🔒 Make Private' : '🌐 Make Public';
-      await sb.from('quizzes').update({ is_public: quiz.is_public }).eq('id', quiz.id);
-    });
-
-    // Rename quiz
-    slip.querySelector('.btn-rename-quiz').addEventListener('click', async e => {
-      e.stopPropagation();
-      const newName = prompt('Rename quiz:', quiz.title);
-      if (!newName || !newName.trim()) return;
-      const { error } = await sb.from('quizzes').update({ title: newName.trim() }).eq('id', quiz.id);
-      if (error) { toast('Could not rename: ' + error.message, 'error'); return; }
-      quiz.title = newName.trim();
-      slip.querySelector('h3').textContent = newName.trim();
-      const pinBtn = slip.querySelector('.btn-pin');
-      if (pinBtn) pinBtn.dataset.itemName = newName.trim();
-      toast('Quiz renamed!', 'success');
-    });
-
-    // Delete quiz
-    slip.querySelector('.btn-delete-quiz').addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!confirm(`Delete quiz "${quiz.title}"?`)) return;
-      await sb.from('quizzes').delete().eq('id', quiz.id);
-      quizzesCache = quizzesCache.filter(q => q.id !== quiz.id);
-      slip.remove();
-      if (activeFolderId) loadFolderCount(activeFolderId);
-      toast('Quiz deleted.', 'info');
-    });
-
-    // Add Question (modal, stays in folder)
-    slip.querySelector('.btn-add-question').addEventListener('click', e => {
-      e.stopPropagation();
-      addQuestionTargetQuizId = quiz.id;
-      document.getElementById('add-question-quiz-title').textContent = quiz.title;
-      document.getElementById('add-question-json').value = '';
-      document.getElementById('add-question-position').value = '';
-      document.getElementById('add-question-status').textContent = '';
-      openModal('modal-add-question');
-    });
-
-
-    slip.querySelector('.btn-start-quiz-real').addEventListener('click', () => {
-      activeQuizId = quiz.id;
-      activeQuizTitle = quiz.title;
-      activeQuizQuestions = Array.isArray(quiz.questions) ? quiz.questions : [];
-      activeFullQuizQuestions = [];
-      document.getElementById('setup-quiz-title').textContent = quiz.title;
-      document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
-      // Reset range selectors to cover the full quiz by default
-      const rFrom = document.getElementById('range-from');
-      const rTo   = document.getElementById('range-to');
-      if (rFrom && rTo) {
-        rFrom.value = 1;
-        rTo.value = activeQuizQuestions.length;
-        rFrom.dispatchEvent(new Event('change'));
-      }
-      openQuizSetup(null);
-    });
-
-    // Flashcards
-    slip.querySelector('.btn-flashcard-quiz-real').addEventListener('click', () => {
-      activeQuizId = quiz.id;
-      activeQuizTitle = quiz.title;
-      activeQuizQuestions = Array.isArray(quiz.questions) ? quiz.questions : [];
-      renderFlashcards(activeQuizQuestions, quiz.title);
-      showView('flashcards');
-    });
-
-    // 🍅 Pomodoro — launch directly with this quiz
-    slip.querySelector('.btn-pomodoro-quiz').addEventListener('click', e => {
-      e.stopPropagation();
-      if (!quizzesCache.find(q => q.id === quiz.id)) quizzesCache.push(quiz);
-      if (typeof startPomodoroSetup === 'function') startPomodoroSetup(quiz.id);
-      else toast('Pomodoro not loaded yet — refresh the page', 'error');
-    });
-
-    // Share quiz
-    slip.querySelector('.btn-share-quiz-real').addEventListener('click', () => {
-      initShareSelection(qCount);
-      currentShareQuizId = quiz.id;
-      const pickerBlock = document.getElementById('share-quiz-picker-block');
-      if (pickerBlock) pickerBlock.style.display = 'none';
-      openModal('modal-share');
-      setupShareModal(quiz);
-    });
-
-    list.appendChild(slip);
-  });
-
-  // Update select-existing-quiz dropdown in create view
-  updateExistingQuizSelect();
-}
-
-function updateSaveFolderSelect() {
-  const sel = document.getElementById('save-folder-select');
-  if (!sel) return;
-  sel.innerHTML = foldersCache.map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`).join('');
-}
-
-function updateTargetFolderSelect() {
-  const sel = document.getElementById('select-target-folder');
-  if (!sel) return;
-  const prev = sel.value;
-
-  // Build indented folder names showing path
-  function getFolderLabel(folder, depth) {
-    return '\u00a0\u00a0'.repeat(depth) + (depth > 0 ? '\u2514 ' : '') + folder.name;
-  }
-  function buildOptions(parentId, depth) {
-    return foldersCache
-      .filter(f => (f.parent_id ?? null) === parentId)
-      .map(f => `<option value="${f.id}">${escHtml(getFolderLabel(f, depth))}</option>` + buildOptions(f.id, depth + 1))
-      .join('');
-  }
+.card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 1rem;
+}
 
-  sel.innerHTML = buildOptions(null, 0) + '<option value="__new">\uff0b Create new folder\u2026</option>';
+.card label:last-child { margin-bottom: 0; }
 
-  if (prev && [...sel.options].some(o => o.value === prev)) {
-    sel.value = prev;
-  } else if (activeFolderId && [...sel.options].some(o => o.value === activeFolderId)) {
-    sel.value = activeFolderId;
-  }
+.card input,
+.card select,
+.card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
 }
 
-function updateExistingQuizSelect() {
-  const sel = document.getElementById('select-existing-quiz');
-  if (!sel) return;
-  const allQuizzes = quizzesCache;
-  sel.innerHTML = '<option value="">— Create as new quiz —</option>' +
-    allQuizzes.map(q => `<option value="${q.id}">${escHtml(q.title)}</option>`).join('');
-}
-
-// ── QUIZ SAVE (Create / Add Questions) ───────────────────────
-async function saveQuiz() {
-  const title      = document.getElementById('input-quiz-title').value.trim();
-  const questions  = parseQuestionJSON();
-  if (!title || !questions) return;
-
-  const existingQuizId = document.getElementById('select-existing-quiz')?.value || '';
-  const btn = document.getElementById('btn-save-quiz');
-  setLoading(btn, true, 'Saving…');
-
-  if (existingQuizId) {
-    // Append to existing quiz
-    const existing = quizzesCache.find(q => q.id === existingQuizId);
-    const merged   = [...(existing?.questions || []), ...questions];
-    const { error } = await sb.from('quizzes')
-      .update({ questions: merged })
-      .eq('id', existingQuizId);
-    setLoading(btn, false);
-    if (error) { toast('Could not update quiz: ' + error.message, 'error'); return; }
-    if (existing) existing.questions = merged;
-    renderQuizzes();
-    toast(`Added ${questions.length} question(s) to "${existing?.title}"!`, 'success');
-  } else {
-    // Create new quiz — use the folder chosen in "Save to folder" dropdown
-    const folderSel = document.getElementById('select-target-folder');
-    let folderId = folderSel?.value || '';
-
-    if (folderId === '__new' || !folderId) {
-      const name = prompt('Enter new folder name:');
-      if (!name || !name.trim()) {
-        setLoading(btn, false);
-        return;
-      }
-      const newFolder = await createFolder(name.trim());
-      if (!newFolder) {
-        setLoading(btn, false);
-        toast('Could not create folder.', 'error');
-        return;
-      }
-      folderId = newFolder.id;
-    }
-
-    const { data, error } = await sb.from('quizzes').insert({
-      user_id: currentUser.id,
-      folder_id: folderId,
-      title,
-      questions
-    }).select().single();
-    setLoading(btn, false);
-    if (error) { toast('Could not create quiz: ' + error.message, 'error'); return; }
-    quizzesCache.unshift(data);
-    renderQuizzes();
-    loadFolderCount(folderId);
-    toast(`Quiz "${title}" created with ${questions.length} questions!`, 'success');
-  }
+.import-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
 
-  document.getElementById('input-quiz-title').value = '';
-  document.getElementById('json-paste-area').value  = '';
-  document.getElementById('import-status').textContent = '';
-  showView('folder');
-}
-
-// ── FRIEND / PUBLIC PROFILE (view their public library) ─────────────────
-document.getElementById('btn-close-friend-profile')?.addEventListener('click', () => closeModal('modal-friend-profile'));
-
-// `friend` needs at least { id }. Other fields (display_name, roll_no,
-// is_public, created_at) are fetched fresh so this works for friend cards,
-// search results, and "preview my own profile" alike.
-async function openFriendProfile(friend) {
-  if (!friend?.id) return;
-
-  const isSelf = friend.id === currentUser?.id;
-
-  let profile = friend;
-  // Always fetch a fresh copy so we have created_at + is_public,
-  // even if the caller only passed { id, display_name, ... }.
-  const { data: freshProfile } = await sb.from('profiles')
-    .select('id, display_name, roll_no, is_public, created_at')
-    .eq('id', friend.id)
-    .maybeSingle();
-  if (freshProfile) profile = freshProfile;
-
-  const initials = (profile.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  document.getElementById('friend-profile-avatar').textContent = initials;
-  document.getElementById('friend-profile-name').textContent = profile.display_name || (isSelf ? 'You' : 'User');
-  document.getElementById('friend-profile-rollno').textContent = profile.roll_no || '';
-
-  const joinedEl = document.getElementById('friend-profile-joined');
-  if (joinedEl) {
-    joinedEl.textContent = profile.created_at
-      ? 'Member since ' + new Date(profile.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-      : '';
-  }
+.import-tabs .tab-btn {
+  flex: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  padding: 0.45rem 1rem;
+}
 
-  const body = document.getElementById('friend-profile-body');
-  const privateMsg = document.getElementById('friend-profile-private-msg');
-
-  // RLS already prevents reading another user's private profile data
-  // (folders/quizzes/likes all require is_public=true or own user_id), but
-  // we also show a friendly message instead of an empty/broken-looking modal.
-  // For self-preview, showing this too helps the user understand what
-  // others see when their profile is set to private.
-  const isPrivateToViewer = profile.is_public === false;
-
-  if (isPrivateToViewer) {
-    if (body) body.style.display = 'none';
-    if (privateMsg) {
-      privateMsg.textContent = isSelf
-        ? '🔒 Your profile is private. This is what others see — toggle visibility in My Profile to share your library.'
-        : '🔒 This profile is private.';
-      privateMsg.style.display = 'block';
-    }
-    openModal('modal-friend-profile');
-    return;
-  }
+.import-tabs .tab-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
 
-  if (body) body.style.display = '';
-  if (privateMsg) privateMsg.style.display = 'none';
-
-  openModal('modal-friend-profile');
-  await Promise.all([
-    renderFriendPublicLibrary(profile, isSelf),
-    renderFriendStats(profile),
-    buildActivityCalendarReal(profile.id, 'friend-contribution-grid', 'friend-contribution-months')
-  ]);
-}
-
-// ── STREAK CALCULATION ────────────────────────────────────────
-// Given a map of { 'YYYY-MM-DD': count }, returns { current, best }.
-// current = consecutive days ending today (or yesterday if not attempted today).
-// best = longest ever consecutive-day run.
-function calcStreak(countMap) {
-  const activeDays = new Set(Object.keys(countMap).filter(d => countMap[d] > 0));
-  if (activeDays.size === 0) return { current: 0, best: 0 };
-
-  const toKey = d => d.toISOString().slice(0, 10);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Current streak — walk back from today
-  let current = 0;
-  const check = new Date(today);
-  // Allow streak to still count if today hasn't been attempted yet (start from yesterday)
-  if (!activeDays.has(toKey(check))) check.setDate(check.getDate() - 1);
-  while (activeDays.has(toKey(check))) {
-    current++;
-    check.setDate(check.getDate() - 1);
-  }
+.import-pane { display: none; }
+.import-pane.active { display: block; }
 
-  // Best streak — sort all active dates and find longest run
-  const sorted = [...activeDays].sort();
-  let best = 0, run = 0, prev = null;
-  sorted.forEach(key => {
-    const d = new Date(key);
-    if (prev) {
-      const diff = (d - prev) / 86400000;
-      run = diff === 1 ? run + 1 : 1;
-    } else {
-      run = 1;
-    }
-    if (run > best) best = run;
-    prev = d;
-  });
-
-  return { current, best };
-}
-
-async function renderFriendStats(friend) {
-  const { data: attempts } = await sb.from('quiz_attempts')
-    .select('score, total, attempted_at, time_taken').eq('user_id', friend.id);
-
-  const totalEl  = document.getElementById('friend-stat-total-quizzes');
-  const accEl    = document.getElementById('friend-stat-avg-accuracy');
-  const streakEl = document.getElementById('friend-stat-streak');
-  const bestEl   = document.getElementById('friend-stat-best-streak');
-
-  if (!attempts || attempts.length === 0) {
-    if (totalEl)  totalEl.textContent  = '0';
-    if (accEl)    accEl.textContent    = '0%';
-    if (streakEl) streakEl.textContent = '0';
-    if (bestEl)   bestEl.textContent   = '0';
-    return;
-  }
+#json-paste-area {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+  background: var(--ink);
+  color: #C9E4D5;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  padding: 1rem;
+}
 
-  if (totalEl) totalEl.textContent = attempts.length;
-  const avgPct = attempts.reduce((sum, a) => sum + (a.total > 0 ? (a.score / a.total) * 100 : 0), 0) / attempts.length;
-  if (accEl) accEl.textContent = Math.round(avgPct) + '%';
-
-  // Build date→count map for streak
-  const countMap = {};
-  attempts.forEach(a => {
-    const d = (a.attempted_at || '').slice(0, 10);
-    if (d) countMap[d] = (countMap[d] || 0) + 1;
-  });
-  const { current, best } = calcStreak(countMap);
-  if (streakEl) streakEl.textContent = current + (current === 1 ? ' day' : ' days');
-  if (bestEl)   bestEl.textContent   = best + (best === 1 ? ' day' : ' days');
-
-  // Highlight streak card if active
-  const streakCard = streakEl?.closest('.profile-stat-card');
-  if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
-}
-
-// ── MY PROFILE STATS ─────────────────────────────────────────
-async function loadMyProfileStats() {
-  if (!currentUser) return;
-  const { data: attempts } = await sb.from('quiz_attempts')
-    .select('score, total, attempted_at, time_taken')
-    .eq('user_id', currentUser.id);
-
-  if (!attempts || attempts.length === 0) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-
-  // Build date map for streak
-  const countMap = {};
-  let totalTime7d = 0;
-  let todayCount = 0;
-  attempts.forEach(a => {
-    const d = (a.attempted_at || '').slice(0, 10);
-    if (!d) return;
-    countMap[d] = (countMap[d] || 0) + 1;
-    if (d === today) todayCount++;
-    if (d >= sevenDaysAgo) totalTime7d += (a.time_taken || 0);
-  });
-
-  const { current, best } = calcStreak(countMap);
-  const avgPct = attempts.reduce((sum, a) => sum + (a.total > 0 ? (a.score / a.total) * 100 : 0), 0) / attempts.length;
-  const totalMins7d = Math.round(totalTime7d / 60);
-
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('stat-quizzes-today', todayCount);
-  set('stat-streak',        current + (current === 1 ? ' day' : ' days'));
-  set('stat-best-streak',   best    + (best === 1    ? ' day' : ' days'));
-  set('stat-quiz-time-week', totalMins7d + 'm');
-  set('stat-avg-accuracy',   Math.round(avgPct) + '%');
-  set('stat-total-quizzes',  attempts.length);
-
-  // Highlight streak card if active
-  const streakCard = document.getElementById('stat-streak')?.closest('.profile-stat-card');
-  if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
-}
-
-async function renderFriendPublicLibrary(friend, isSelf) {
-  const grid  = document.getElementById('friend-public-library-grid');
-  const empty = document.getElementById('friend-public-library-empty');
-  if (!grid) return;
-  grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
-
-  const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', friend.id).eq('is_public', true).is('parent_id', null),
-    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', friend.id).eq('is_public', true)
-  ]);
-
-  // Don't show quizzes that belong to a public folder (avoid duplicate "Add")
-  const folderIds = new Set((pubFolders || []).map(f => f.id));
-  const standaloneQuizzes = (pubQuizzes || []).filter(q => !folderIds.has(q.folder_id));
-
-  const items = [
-    ...(pubFolders || []).map(f => ({ id: f.id, type: 'folder', label: '📁 Folder', title: f.name, meta: '' })),
-    ...standaloneQuizzes.map(q => ({ id: q.id, type: 'quiz', label: '📝 Quiz', title: q.title, meta: `${q.questions?.length || 0} Qs` }))
-  ];
-
-  grid.innerHTML = '';
-  if (items.length === 0) { if (empty) empty.style.display = 'block'; return; }
-  if (empty) empty.style.display = 'none';
-
-  // Like counts + which items the current user has already liked
-  const itemIds = items.map(i => i.id);
-  const [{ data: likes }, { data: myLikes }] = await Promise.all([
-    sb.from('likes').select('item_id').in('item_id', itemIds),
-    currentUser
-      ? sb.from('likes').select('item_id').eq('user_id', currentUser.id).in('item_id', itemIds)
-      : Promise.resolve({ data: [] })
-  ]);
-  const likeMap = {};
-  (likes || []).forEach(l => { likeMap[l.item_id] = (likeMap[l.item_id] || 0) + 1; });
-  const myLikedSet = new Set((myLikes || []).map(l => l.item_id));
-
-  items.forEach(item => {
-    const el = document.createElement('article');
-    el.className = 'public-lib-card';
-    const likeCount = likeMap[item.id] || 0;
-    const isLiked = myLikedSet.has(item.id);
-    el.innerHTML = `
-      <div class="public-lib-card-top">
-        <span class="public-lib-type">${item.label}</span>
-        <span class="visibility-badge visibility-badge--public">🌐 Public</span>
-      </div>
-      <h4>${escHtml(item.title)}</h4>
-      <span class="public-lib-owner">👤 ${isSelf ? 'You' : escHtml(friend.display_name)} · ${item.meta}</span>
-      <div class="public-lib-actions">
-        <button class="btn-like${isLiked ? ' liked' : ''}" data-id="${item.id}">❤ <span class="like-count">${likeCount}</span></button>
-        ${isSelf ? '' : '<button class="btn btn--ghost btn--small btn-import-shared-item">📥 Add to My Library</button>'}
-      </div>
-    `;
-    if (item.type === 'folder') {
-      el.style.cursor = 'pointer';
-      el.addEventListener('click', e => {
-        if (e.target.closest('.btn-like, .btn-import-shared-item')) return;
-        if (!foldersCache.find(f => f.id === item.id)) {
-          foldersCache.push({ id: item.id, name: item.title, parent_id: null, user_id: friend.id, is_public: true });
-        }
-        openFolder(item.id, item.title, null);
-      });
-    }
-
-    grid.appendChild(el);
-
-    el.querySelector('.btn-like').addEventListener('click', async () => {
-      if (!currentUser) return;
-      const btn = el.querySelector('.btn-like');
-      const liked = btn.classList.toggle('liked');
-      const countEl = btn.querySelector('.like-count');
-      if (liked) {
-        await sb.from('likes').insert({ user_id: currentUser.id, item_type: item.type, item_id: item.id });
-        countEl.textContent = parseInt(countEl.textContent) + 1;
-      } else {
-        await sb.from('likes').delete().eq('user_id', currentUser.id).eq('item_id', item.id);
-        countEl.textContent = Math.max(0, parseInt(countEl.textContent) - 1);
-      }
-    });
-
-    const importBtn = el.querySelector('.btn-import-shared-item');
-    if (importBtn) {
-      importBtn.addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        setLoading(btn, true, 'Adding…');
-        if (item.type === 'folder') {
-          await importSharedChapter(item.id, item.title);
-        } else {
-          await importSharedQuiz(item.id, item.title, friend.display_name);
-        }
-        setLoading(btn, false);
-      });
-    }
-  });
-}
-
-// Import a single shared quiz into the current user's library.
-// If targetFolderId/Name are provided it goes straight there; otherwise a
-// destination-picker modal is shown first.
-async function importSharedQuiz(quizId, quizTitle, fromName, targetFolderId, targetFolderName) {
-  if (!targetFolderId) {
-    // Show picker — then re-call with the chosen folder
-    showDestinationPicker(quizTitle || 'Shared Quiz', (fId, fName) => {
-      importSharedQuiz(quizId, quizTitle, fromName, fId, fName);
-    });
-    return;
-  }
+.hint {
+  font-size: 0.75rem;
+  color: var(--slate);
+  margin-top: 0.6rem;
+  line-height: 1.5;
+}
+
+.hint code {
+  background: var(--paper);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+
+.file-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--slate);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.file-drop:hover { border-color: var(--saffron); color: var(--saffron); background: var(--saffron-soft); }
+
+.file-drop-icon { font-size: 1.5rem; }
+
+.file-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  margin-top: 0.5rem;
+}
+
+.import-status {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.import-status.success { color: var(--success); }
+.import-status.error { color: var(--error); }
+
+.create-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+/* =========================================================
+   QUIZ SETUP
+   ========================================================= */
+.setup-card {
+  max-width: 560px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
+}
+
+.setup-subtitle {
+  font-size: 0.85rem;
+  color: var(--slate);
+  margin-top: 0.3rem;
+}
+
+.setup-challenge-note {
+  font-size: 0.85rem;
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--amber-soft, rgba(245, 158, 11, 0.12));
+  color: var(--ink);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  display: inline-block;
+}
+
+.setup-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.setup-block > label:first-child {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  margin-bottom: 0.75rem;
+}
+
+/* Segmented control (By Range / Random Pick, Timer modes) */
+.seg-control {
+  display: flex;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 1rem;
+}
+
+.seg-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  transition: all 0.15s ease;
+}
+
+.seg-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.seg-control--3 .seg-btn { font-size: 0.8rem; padding: 0.55rem 0.5rem; }
+
+.select-mode-pane { display: none; }
+.select-mode-pane.active { display: block; }
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--slate);
+}
+
+.range-field input {
+  width: 70px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  text-align: center;
+  font-size: 0.95rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.range-sep {
+  color: var(--slate);
+  margin-top: 1.1rem;
+}
+
+.range-count-badge {
+  margin-top: 1.1rem;
+  margin-left: auto;
+  background: var(--saffron);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+}
+
+.range-count-badge strong { font-size: 0.95rem; }
 
-  const { data: srcQuiz, error } = await sb.from('quizzes')
-    .select('title, questions').eq('id', quizId).single();
-  if (error || !srcQuiz) { toast('Could not load quiz: ' + (error?.message || ''), 'error'); return; }
-
-  const { error: insErr } = await sb.from('quizzes').insert({
-    user_id: currentUser.id,
-    folder_id: targetFolderId,
-    title: srcQuiz.title,
-    questions: srcQuiz.questions,
-    is_public: false
-  });
-  if (insErr) { toast('Could not add quiz: ' + insErr.message, 'error'); return; }
-
-  loadFolderCount(targetFolderId);
-  toast(`"${srcQuiz.title}" added to "${targetFolderName}"!`, 'success');
-}
-
-
-// ── DESTINATION PICKER ───────────────────────────────────────
-// Shows a modal asking the user where to save an imported quiz/chapter.
-// onConfirm(folderId, folderName) is called with the chosen destination.
-function showDestinationPicker(title, onConfirm) {
-  document.getElementById('modal-destination-picker')?.remove();
-
-  const rootFolders = foldersCache.filter(f => f.user_id === currentUser?.id && !f.parent_id);
-  const hasFolders  = rootFolders.length > 0;
-
-  // Each folder = compact row: radio · 📁 icon · name
-  const optionsHtml = rootFolders.map((f, i) =>
-    `<label class="dp-row" for="dp-r-${i}">
-      <input class="dp-radio" type="radio" name="dest-folder"
-        id="dp-r-${i}" value="${escHtml(f.id)}" data-name="${escHtml(f.name)}"
-        ${i === 0 ? 'checked' : ''}>
-      <span class="dp-folder-icon">📁</span>
-      <span class="dp-folder-name">${escHtml(f.name)}</span>
-    </label>`
-  ).join('');
-
-  const newChecked         = !hasFolders ? 'checked' : '';
-  const newInputDisplay    = !hasFolders ? 'block'   : 'none';
-
-  const m = document.createElement('div');
-  m.className = 'modal active';
-  m.id = 'modal-destination-picker';
-  m.innerHTML = `
-    <div class="modal-card dp-card">
-      <div class="dp-header">
-        <span class="dp-title">📥 Save to…</span>
-        <button class="dp-close" id="dest-cancel-x" aria-label="Close">✕</button>
-      </div>
-      <p class="dp-subtitle">${escHtml(title)}</p>
-
-      <div class="dp-list" id="dest-folder-list">
-        ${optionsHtml}
-
-        <label class="dp-row dp-row--new" for="dp-r-new">
-          <input class="dp-radio" type="radio" name="dest-folder"
-            id="dp-r-new" value="__new__" ${newChecked}>
-          <span class="dp-folder-icon">➕</span>
-          <span class="dp-folder-name">Create new folder</span>
-        </label>
-      </div>
-
-      <div id="dest-new-folder-row" style="display:${newInputDisplay};padding:0 0 0.75rem">
-        <input id="dest-new-folder-name" class="input" type="text"
-          placeholder="New folder name…" style="width:100%"
-          autocomplete="off" spellcheck="false">
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn btn--ghost" id="dest-cancel">Cancel</button>
-        <button class="btn btn--primary" id="dest-confirm">Save Here</button>
-      </div>
-    </div>`;
-
-  document.body.appendChild(m);
-
-  if (!hasFolders) {
-    setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 80);
+.preset-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.preset-btn {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 20px;
+  transition: all 0.12s ease;
+}
+
+.preset-btn:hover, .preset-btn.active {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+  color: var(--ink);
+}
+
+.sublabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.sublabel input {
+  width: 120px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.setup-block--toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-transform: none;
+}
+
+.toggle-row small {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--slate);
+  text-transform: none;
+}
+
+.timer-help {
+  font-size: 0.8rem;
+  color: var(--slate);
+  font-style: italic;
+}
+
+.timer-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.timer-input-row input {
+  width: 80px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.timer-input-row span {
+  font-size: 0.85rem;
+  color: var(--slate);
+}
+
+.setup-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+/* Switch toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--line-strong);
+  border-radius: 24px;
+  transition: 0.2s;
+}
+.switch-slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+.switch input:checked + .switch-slider { background-color: var(--saffron); }
+.switch input:checked + .switch-slider::before { transform: translateX(18px); }
+
+/* =========================================================
+   QUIZ PLAYER
+   ========================================================= */
+.player-wrap {
+  max-width: 720px;
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.player-progress {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink-soft);
+}
+
+.player-timer {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.1rem;
+  background: var(--ink);
+  color: var(--saffron);
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.player-timer.timer-low { background: var(--error); color: white; animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.progress-track {
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--saffron);
+  transition: width 0.25s ease;
+}
+
+.question-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 1.5rem;
+}
+
+.question-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+@media (max-width:480px){
+
+  .question-card-head{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      gap:0.75rem;
   }
 
-  // Show / hide new-name input when radio changes
-  m.querySelectorAll('.dp-radio').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const row  = document.getElementById('dest-new-folder-row');
-      const isNew = radio.value === '__new__';
-      if (row) row.style.display = isNew ? 'block' : 'none';
-      if (isNew) setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 50);
-    });
-  });
-
-  // Enter key on new-folder input confirms
-  document.getElementById('dest-new-folder-name')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dest-confirm')?.click(); }
-  });
-
-  const closePicker = () => m.remove();
-  document.getElementById('dest-cancel')?.addEventListener('click', closePicker);
-  document.getElementById('dest-cancel-x')?.addEventListener('click', closePicker);
-
-  document.getElementById('dest-confirm').addEventListener('click', async () => {
-    const selected = m.querySelector('.dp-radio:checked');
-    if (!selected) { toast('Pick a destination folder.', 'info'); return; }
-
-    if (selected.value === '__new__') {
-      const nameVal = (document.getElementById('dest-new-folder-name')?.value || '').trim();
-      if (!nameVal) {
-        document.getElementById('dest-new-folder-name')?.focus();
-        toast('Enter a name for the new folder.', 'error');
-        return;
-      }
-      const btn = document.getElementById('dest-confirm');
-      setLoading(btn, true, 'Creating…');
-      const newFolder = await createFolder(nameVal, true);
-      setLoading(btn, false);
-      if (!newFolder) { toast('Could not create folder.', 'error'); return; }
-      m.remove();
-      onConfirm(newFolder.id, newFolder.name);
-    } else {
-      // ✅ Goes directly into chosen folder — no extra folder created
-      m.remove();
-      onConfirm(selected.value, selected.dataset.name || selected.value);
-    }
-  });
-
-  // ── Styles (injected once) ──────────────────────────────────
-  if (!document.getElementById('dest-picker-style')) {
-    const s = document.createElement('style');
-    s.id = 'dest-picker-style';
-    s.textContent = `
-      /* Modal card sizing */
-      .dp-card { max-width: 400px; width: 100%; padding: 1.25rem 1.25rem 1rem; }
-
-      /* Header row */
-      .dp-header {
-        display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 0.2rem;
-      }
-      .dp-title {
-        font-family: var(--font-display); font-size: 1.05rem;
-        font-weight: 700; color: var(--ink);
-      }
-      .dp-close {
-        background: none; border: none; font-size: 1rem; cursor: pointer;
-        color: var(--slate); padding: 0.2rem 0.4rem;
-        border-radius: var(--radius-sm); line-height: 1;
-        transition: background .15s;
-      }
-      .dp-close:hover { background: var(--line); }
-
-      /* Subtitle */
-      .dp-subtitle {
-        font-size: 0.82rem; color: var(--slate);
-        margin: 0 0 0.85rem; word-break: break-word;
-      }
-
-      /* Scrollable list */
-      .dp-list {
-        max-height: 220px; overflow-y: auto;
-        display: flex; flex-direction: column; gap: 0;
-        border: 1px solid var(--line); border-radius: var(--radius-md);
-        margin-bottom: 0.75rem; overflow-x: hidden;
-      }
-
-      /* Each folder row */
-      .dp-row {
-        display: flex; align-items: center; gap: 0.6rem;
-        padding: 0.6rem 0.85rem; cursor: pointer;
-        border-bottom: 1px solid var(--line);
-        transition: background .12s; user-select: none;
-      }
-      .dp-row:last-child { border-bottom: none; }
-      .dp-row:hover { background: var(--paper-raised); }
-
-      /* Selected state — matches screenshot blue tint */
-      .dp-row:has(.dp-radio:checked) {
-        background: var(--saffron-soft);
-      }
-      [data-theme="dark"] .dp-row:has(.dp-radio:checked) {
-        background: rgba(245,168,50,0.12);
-      }
-
-      /* Hide native radio; keep it accessible */
-      .dp-radio {
-        appearance: none; -webkit-appearance: none;
-        width: 14px; height: 14px; border-radius: 50%;
-        border: 2px solid var(--line-strong);
-        flex-shrink: 0; transition: border-color .15s, background .15s;
-        position: relative; cursor: pointer;
-      }
-      .dp-radio:checked {
-        border-color: var(--saffron);
-        background: var(--saffron);
-        box-shadow: inset 0 0 0 3px var(--paper-raised);
-      }
-
-      .dp-folder-icon { font-size: 1.1rem; flex-shrink: 0; }
-      .dp-folder-name {
-        flex: 1; font-size: 0.88rem; color: var(--ink);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-
-      /* "Create new folder" row */
-      .dp-row--new .dp-folder-name { color: var(--slate); font-style: italic; }
-      .dp-row--new:has(.dp-radio:checked) .dp-folder-name { color: var(--ink); font-style: normal; }
-    `;
-    document.head.appendChild(s);
+  .question-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:0.5rem;
+      width:100%;
   }
+
 }
+.question-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
 
-let addQuestionTargetQuizId = null;
-
-document.getElementById('btn-cancel-add-question')?.addEventListener('click', () => closeModal('modal-add-question'));
-
-document.getElementById('btn-import-add-question')?.addEventListener('click', async () => {
-  if (!addQuestionTargetQuizId) return;
-  const raw = document.getElementById('add-question-json').value.trim();
-  const statusEl = document.getElementById('add-question-status');
-  if (!raw) { statusEl.textContent = 'Paste JSON first.'; statusEl.className = 'import-status error'; return; }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) throw new Error('JSON must be an array.');
-    parsed.forEach((q, i) => {
-      if (!q.question || !Array.isArray(q.options) || typeof q.correctIndex !== 'number')
-        throw new Error('Question ' + (i + 1) + ' missing required fields.');
-    });
-  } catch (err) {
-    statusEl.textContent = '✗ ' + err.message;
-    statusEl.className = 'import-status error';
-    return;
-  }
+.icon-btn--review {
+  border-color: var(--line);
+  white-space: nowrap;
+}
+.icon-btn--review.active {
+  background: var(--saffron-soft, rgba(245, 158, 11, 0.18));
+  border-color: var(--saffron);
+  color: var(--ink);
+  font-weight: 700;
+}
 
-  const existing = quizzesCache.find(q => q.id === addQuestionTargetQuizId);
-  if (!existing) { toast('Quiz not found.', 'error'); return; }
-
-  // Assign unique ids that don't collide with existing question ids
-  const existingIds = new Set((existing.questions || []).map(q => String(q.id)));
-  let counter = (existing.questions || []).length + 1;
-  parsed.forEach(q => {
-    if (!q.id || existingIds.has(String(q.id))) {
-      while (existingIds.has('q' + counter)) counter++;
-      q.id = 'q' + counter;
-      counter++;
-    }
-    existingIds.add(String(q.id));
-  });
-
-  const posRaw = document.getElementById('add-question-position').value.trim();
-  const pos = posRaw ? Math.max(1, Math.min(parseInt(posRaw, 10), (existing.questions || []).length + 1)) : null;
-
-  const list = [...(existing.questions || [])];
-  if (pos) list.splice(pos - 1, 0, ...parsed);
-  else list.push(...parsed);
-
-  const btn = document.getElementById('btn-import-add-question');
-  setLoading(btn, true, 'Importing…');
-  const { error } = await sb.from('quizzes').update({ questions: list }).eq('id', addQuestionTargetQuizId);
-  setLoading(btn, false);
-  if (error) { toast('Could not update quiz: ' + error.message, 'error'); return; }
-
-  existing.questions = list;
-  renderQuizzes();
-  toast(`Added ${parsed.length} question(s) to "${existing.title}"!`, 'success');
-
-  document.getElementById('add-question-json').value = '';
-  document.getElementById('add-question-position').value = '';
-  statusEl.textContent = '';
-  closeModal('modal-add-question');
-});
-
-
-let activeQuizId        = null;
-let activeQuizTitle     = '';
-let activeQuizQuestions = [];
-let activeFullQuizQuestions = [];
-let activeQuizSessionId = null; // shared/group quiz session for leaderboard
-let currentShareQuizId  = null;
-
-// ── QUIZ PLAYER INTEGRATION ────────────────────────────────────
-// Overrides renderPlayer to use real questions
-function renderPlayerReal() {
-  const total = quizState.length || 1;
-  const q = activeQuizQuestions[currentQ];
-
-  document.getElementById('player-q-current').textContent = currentQ + 1;
-  document.getElementById('player-q-total').textContent   = total;
-  document.getElementById('question-tag').textContent     = 'Question ' + (currentQ + 1);
-  document.getElementById('progress-fill').style.width   = (((currentQ + 1) / total) * 100) + '%';
-
-  if (q) {
-    document.getElementById('question-text').textContent = q.question || '';
-    const optionEls = document.querySelectorAll('.option-item');
-    const numOptions = Array.isArray(q.options) ? q.options.length : 0;
-    optionEls.forEach((el, i) => {
-      const label = el.querySelector('.option-label');
-      const text  = el.querySelector('.option-text');
-      const radio = el.querySelector('input[type="radio"]');
-      if (i < numOptions) {
-        el.style.display = '';
-        if (label) label.textContent = String.fromCharCode(65 + i);
-        if (text) text.textContent = q.options[i] || '';
-        const isSelected = quizState[currentQ]?.optionIndex === i;
-        el.classList.toggle('selected', isSelected);
-        if (radio) radio.checked = isSelected;
-      } else {
-        el.style.display = 'none';
-        el.classList.remove('selected');
-        if (radio) radio.checked = false;
-      }
-    });
-  }
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+  color: var(--ink-soft);
+}
 
-  document.getElementById('btn-q-review').classList.toggle('active', quizState[currentQ]?.marked);
-  document.getElementById('btn-prev-q').disabled = currentQ === 0;
-  document.getElementById('btn-next-q').textContent = currentQ === total - 1 ? 'Finish ✓' : 'Next →';
-}
-
-// ── RESULT SAVE ───────────────────────────────────────────────
-async function saveAttempt() {
-  if (!currentUser || !activeQuizId) return;
-
-  const answers = {};
-  let correct = 0, incorrect = 0, skipped = 0;
-  const total = quizState.length;
-
-  quizState.forEach((s, i) => {
-    answers[i] = s.optionIndex;
-    const q = activeQuizQuestions[i];
-    if (s.optionIndex === null || s.optionIndex === undefined) {
-      skipped++;
-    } else if (q && s.optionIndex === q.correctIndex) {
-      correct++;
-    } else {
-      incorrect++;
-    }
-  });
-
-  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
-
-  // Elapsed: total set time minus remaining (0 if no timer)
-  const elapsed = timerMode !== 'none'
-    ? ((parseInt(document.getElementById('timer-minutes')?.value || 0) * 60)
-      + parseInt(document.getElementById('timer-seconds')?.value || 0))
-      - timeRemaining
-    : 0;
-
-  const mm = String(Math.floor(Math.abs(elapsed) / 60)).padStart(2, '0');
-  const ss = String(Math.abs(elapsed) % 60).padStart(2, '0');
-  const timeStr = elapsed > 0 ? `${mm}:${ss}` : '\u2014';
-
-  // ── Update result UI (matching index.html IDs exactly) ──
-  document.getElementById('result-quiz-title').textContent = activeQuizTitle;
-  document.getElementById('score-percent').textContent     = pct + '%';
-  document.getElementById('stat-correct').textContent      = correct;
-  document.getElementById('stat-incorrect').textContent    = incorrect;
-  document.getElementById('stat-skipped').textContent      = skipped;
-  document.getElementById('stat-time').textContent         = timeStr;
-  document.getElementById('stat-rank').textContent         = '\u2014'; // updated after DB save
-
-  // ── Build review list ──
-  const reviewList = document.getElementById('review-list');
-  if (reviewList) {
-    reviewList.innerHTML = '';
-    const labels = ['A','B','C','D','E'];
-    quizState.forEach((s, i) => {
-      const q = activeQuizQuestions[i];
-      if (!q) return;
-      const isSkipped = s.optionIndex === null || s.optionIndex === undefined;
-      const isCorrect = !isSkipped && s.optionIndex === q.correctIndex;
-      const cls = isCorrect ? 'review-item--correct' : isSkipped ? 'review-item--skipped' : 'review-item--incorrect';
-      const yourLabel = isSkipped ? '\u2014' : (labels[s.optionIndex] || s.optionIndex);
-      const yourText  = isSkipped ? 'Skipped' : escHtml(q.options?.[s.optionIndex] || '');
-      const corrLabel = labels[q.correctIndex] || q.correctIndex;
-      const corrText  = escHtml(q.options?.[q.correctIndex] || '');
-
-      const item = document.createElement('article');
-      item.className = `review-item ${cls}`;
-      item.innerHTML = `
-        <div class="review-q">
-          <span class="review-num">${i + 1}.</span>
-          <span>${escHtml(q.question || '')}</span>
-        </div>
-        <div class="review-answer">
-          ${isSkipped
-            ? `<span class="review-tag review-tag--skipped">Skipped</span>`
-            : isCorrect
-              ? `<span class="review-tag review-tag--correct">Your answer: ${yourLabel}. ${yourText} \u2713</span>`
-              : `<span class="review-tag review-tag--incorrect">Your answer: ${yourLabel}. ${yourText} \u2717</span>
-                 <span class="review-tag review-tag--correct" style="margin-left:.5rem">Correct: ${corrLabel}. ${corrText}</span>`
-          }
-        </div>
-        ${q.explanation ? `<p class="review-explanation">${escHtml(q.explanation)}</p>` : ''}
-      `;
-      reviewList.appendChild(item);
-    });
-  }
+.icon-btn:hover {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+}
 
-  // ── Show/hide leaderboard button for group/shared sessions ──
-  const lbBtn = document.getElementById('btn-result-leaderboard');
-  if (lbBtn) lbBtn.style.display = activeQuizSessionId ? '' : 'none';
-
-  // ── Save to DB then compute rank ──
-  sb.from('quiz_attempts').insert({
-    user_id:    currentUser.id,
-    quiz_id:    activeQuizId,
-    quiz_title: activeQuizTitle,
-    session_id: activeQuizSessionId,
-    score: correct, total, answers,
-    time_taken: elapsed
-  }).then(async ({ error }) => {
-    if (error) { console.warn('Attempt save error:', error.message); return; }
-    const { data: attempts } = await sb.from('quiz_attempts')
-      .select('score, total')
-      .eq('quiz_id', activeQuizId);
-    if (attempts && attempts.length > 0) {
-      const rank = attempts.filter(a => {
-        const ap = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-        return ap > pct;
-      }).length + 1;
-      const rankEl = document.getElementById('stat-rank');
-      if (rankEl) rankEl.textContent = '#' + rank;
-    }
-  });
-}
-
-document.getElementById('btn-result-leaderboard')?.addEventListener('click', async () => {
-  if (!activeQuizSessionId) return;
-  await renderSessionLeaderboard(activeQuizSessionId);
-});
-
-async function renderSessionLeaderboard(sessionId) {
-  const list = document.getElementById('leaderboard-list');
-  const nameEl = document.getElementById('leaderboard-quiz-name');
-  if (!list) return;
-  list.innerHTML = '<p class="hint">Loading...</p>';
-
-  const { data: session } = await sb.from('quiz_sessions')
-    .select('*').eq('id', sessionId).single();
-
-  if (nameEl) nameEl.textContent = session?.title || activeQuizTitle || '';
-
-  const memberIds = session?.member_ids || [currentUser.id];
-
-  const [{ data: attempts }, { data: profilesData }] = await Promise.all([
-    sb.from('quiz_attempts')
-      .select('user_id, score, total, time_taken, attempted_at')
-      .eq('session_id', sessionId)
-      .order('attempted_at', { ascending: true }),
-    sb.from('profiles').select('id, display_name, roll_no').in('id', memberIds)
-  ]);
-
-  const profileMap = new Map((profilesData || []).map(p => [p.id, p]));
-
-  // Group attempts per user, in chronological order (1st, 2nd, 3rd...)
-  const attemptsByUser = new Map();
-  (attempts || []).forEach(a => {
-    if (!attemptsByUser.has(a.user_id)) attemptsByUser.set(a.user_id, []);
-    attemptsByUser.get(a.user_id).push(a);
-  });
-
-  const fmtTime = (t) => {
-    t = t || 0;
-    const mm = String(Math.floor(t / 60)).padStart(2, '0');
-    const ss = String(t % 60).padStart(2, '0');
-    return t > 0 ? `${mm}:${ss}` : '\u2014';
-  };
-  const fmtPct = (a) => a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-
-  const rows = memberIds.map(uid => {
-    const profile = profileMap.get(uid);
-    const userAttempts = attemptsByUser.get(uid) || [];
-    const firstAttempt = userAttempts[0] || null;
-    const name = uid === currentUser.id ? 'You' : (profile?.display_name || 'Friend');
-    const sub  = profile?.display_name || profile?.roll_no || '';
-    const initials = (profile?.display_name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
-    return {
-      uid, name, sub, initials,
-      pct: firstAttempt ? fmtPct(firstAttempt) : null,
-      timeStr: firstAttempt ? fmtTime(firstAttempt.time_taken) : '\u2014',
-      firstAttempt,
-      attempts: userAttempts
-    };
-  });
-
-  // Rank by FIRST attempt only (highest score, then lowest time)
-  rows.sort((a, b) => {
-    if (a.pct === null && b.pct === null) return 0;
-    if (a.pct === null) return 1;
-    if (b.pct === null) return -1;
-    if (b.pct !== a.pct) return b.pct - a.pct;
-    return (a.firstAttempt.time_taken || 0) - (b.firstAttempt.time_taken || 0);
-  });
-
-  const medals = ['🥇', '🥈', '🥉'];
-  list.innerHTML = rows.map((r, i) => {
-    const isMe = r.uid === currentUser.id;
-    if (r.pct === null) {
-      return `
-        <div class="leaderboard-row leaderboard-row--pending${isMe ? ' leaderboard-row--me' : ''}">
-          <div class="leaderboard-row-main">
-            <span class="lb-rank lb-rank--pending">\u2014</span>
-            <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
-            <div class="lb-info"><strong>${escHtml(r.name)}</strong><span>Not attempted yet</span></div>
-            <div class="lb-score lb-score--pending">\u2014</div>
-            <div class="lb-time">\u2014</div>
-          </div>
-        </div>`;
-    }
-    const rank = medals[i] || `#${i + 1}`;
-
-    const extraAttempts = r.attempts.slice(1);
-    const attemptsHtml = extraAttempts.length ? `
-      <div class="lb-attempts">
-        ${r.attempts.map((a, idx) => `
-          <div class="lb-attempt-row${idx === 0 ? ' lb-attempt-row--first' : ''}">
-            <span class="lb-attempt-label">${idx === 0 ? '1st attempt (counts for rank)' : ordinal(idx + 1) + ' attempt'}</span>
-            <span class="lb-attempt-score">${fmtPct(a)}%</span>
-            <span class="lb-attempt-time">${fmtTime(a.time_taken)}</span>
-          </div>`).join('')}
-      </div>` : '';
-
-    return `
-      <div class="leaderboard-row${isMe ? ' leaderboard-row--me' : ''}${extraAttempts.length ? ' leaderboard-row--has-attempts' : ''}">
-        <div class="leaderboard-row-main">
-          <span class="lb-rank">${rank}</span>
-          <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
-          <div class="lb-info">
-            <strong>${escHtml(r.name)}</strong>
-            <span>${escHtml(r.sub)}${r.attempts.length > 1 ? ` · ${r.attempts.length} attempts` : ''}</span>
-          </div>
-          <div class="lb-score">${r.pct}%</div>
-          <div class="lb-time">${r.timeStr}</div>
-        </div>
-        ${attemptsHtml}
-      </div>`;
-  }).join('');
-
-  openModal('modal-leaderboard');
-}
-
-// 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 4 -> "4th", ...
-function ordinal(n) {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-async function loadHistory() {
-  if (!currentUser) return;
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await sb.from('quiz_attempts')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .gte('attempted_at', since)
-    .order('attempted_at', { ascending: false })
-    .limit(10);
-  if (error) return;
-  renderHistory(data || []);
-}
-
-function renderHistory(attempts) {
-  const list = document.getElementById('history-list');
-  if (!list) return;
-
-  // Remove dynamic entries
-  list.querySelectorAll('.history-item[data-attempt-id]').forEach(i => i.remove());
-  const empty = document.getElementById('history-empty');
-  if (attempts.length === 0) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  attempts.forEach(a => {
-    const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-    const el = document.createElement('div');
-    el.className = 'history-item';
-    el.dataset.attemptId = a.id;
-    el.innerHTML = `
-      <div class="history-item-top">
-        <strong>${escHtml(a.quiz_title)}</strong>
-        <span class="history-score ${pct >= 70 ? 'score--good' : pct >= 40 ? 'score--ok' : 'score--low'}">
-          ${a.score}/${a.total} (${pct}%)
-        </span>
-      </div>
-      <div class="history-item-meta">
-        <span>${new Date(a.attempted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-        ${a.time_taken > 0 ? `<span>⏱ ${Math.floor(a.time_taken/60)}m ${a.time_taken%60}s</span>` : ''}
-      </div>
-    `;
-    list.insertBefore(el, list.firstChild);
-  });
-}
-
-// ── DIRECT MESSAGING ─────────────────────────────────────────────
-let _chatConvId      = null;   // active conversation id
-let _chatChannel     = null;   // realtime channel
-let _chatFriendName  = '';
-
-async function openChat(friendId, friendName) {
-  if (!currentUser) return;
-  _chatFriendName = friendName;
-
-  // Find or create conversation (canonical order: smaller uuid first)
-  const [u1, u2] = [currentUser.id, friendId].sort();
-  let { data: conv } = await sb.from('conversations')
-    .select('id')
-    .eq('user1_id', u1).eq('user2_id', u2)
-    .maybeSingle();
-
-  if (!conv) {
-    const { data: newConv, error } = await sb.from('conversations')
-      .insert({ user1_id: u1, user2_id: u2 })
-      .select('id').single();
-    if (error) { toast('Could not open chat.', 'error'); return; }
-    conv = newConv;
-  }
-  _chatConvId = conv.id;
-
-  // Show panel
-  const panel = document.getElementById('chat-panel');
-  if (panel) {
-    document.getElementById('chat-panel-title').textContent = friendName;
-    panel.classList.add('chat-panel--open');
-  }
+.icon-btn--danger:hover {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+}
 
-  await loadMessages(_chatConvId);
-  _subscribeChatRealtime(_chatConvId);
-}
-
-async function loadMessages(convId) {
-  const { data, error } = await sb.from('messages')
-    .select('*')
-    .eq('conversation_id', convId)
-    .order('created_at', { ascending: true })
-    .limit(50);
-  if (error) return;
-
-  const list = document.getElementById('chat-messages-list');
-  if (!list) return;
-  list.innerHTML = '';
-  (data || []).forEach(msg => _appendMessageBubble(msg));
-  list.scrollTop = list.scrollHeight;
-
-  // Mark unseen messages as seen
-  const unseenIds = (data || [])
-    .filter(m => !m.seen && m.sender_id !== currentUser.id)
-    .map(m => m.id);
-  if (unseenIds.length) {
-    await sb.from('messages').update({ seen: true }).in('id', unseenIds);
-  }
+.icon-btn.bookmarked {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+  color: var(--ink);
+}
+
+.question-tag {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--saffron);
+}
+
+.question-text {
+  font-size: 1.25rem;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+}
+
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.option-item:hover { border-color: var(--saffron); background: var(--saffron-soft); }
+
+.option-item input { accent-color: var(--saffron); width: 18px; height: 18px; }
+
+.option-item.selected {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+}
+
+.option-item.correct {
+  border-color: var(--success);
+  background: var(--success-soft);
 }
 
-function _appendMessageBubble(msg) {
-  const list = document.getElementById('chat-messages-list');
-  if (!list) return;
-  const mine = msg.sender_id === currentUser.id;
-  const el = document.createElement('div');
-  el.className = `chat-bubble ${mine ? 'chat-bubble--mine' : 'chat-bubble--theirs'}`;
-  el.dataset.msgId = msg.id;
-  const time = new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  el.innerHTML = `<span class="chat-bubble-text">${escHtml(msg.content)}</span><span class="chat-bubble-time">${time}</span>`;
-  list.appendChild(el);
-  list.scrollTop = list.scrollHeight;
-}
-
-async function sendMessage() {
-  if (!_chatConvId || !currentUser) return;
-  const input = document.getElementById('chat-input');
-  const text = (input?.value || '').trim();
-  if (!text) return;
-  input.value = '';
-  const { error } = await sb.from('messages').insert({
-    conversation_id: _chatConvId,
-    sender_id: currentUser.id,
-    content: text,
-  });
-  if (error) { toast('Failed to send.', 'error'); input.value = text; }
-}
-
-function _subscribeChatRealtime(convId) {
-  if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
-  _chatChannel = sb.channel(`chat-${convId}`)
-    .on('postgres_changes', {
-      event: 'INSERT', schema: 'public', table: 'messages',
-      filter: `conversation_id=eq.${convId}`,
-    }, payload => {
-      const msg = payload.new;
-      // Avoid duplicate if we already rendered it (our own sends)
-      if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
-      _appendMessageBubble(msg);
-      if (msg.sender_id !== currentUser.id) {
-        sb.from('messages').update({ seen: true }).eq('id', msg.id);
-      }
-    })
-    .subscribe();
-}
-
-function closeChat() {
-  const panel = document.getElementById('chat-panel');
-  if (panel) panel.classList.remove('chat-panel--open');
-  if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
-  _chatConvId = null;
-}
-
-async function loadUnreadCount() {
-  if (!currentUser) return;
-  // Get all conversations for current user
-  const { data: convs } = await sb.from('conversations')
-    .select('id')
-    .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`);
-  if (!convs?.length) return;
-  const convIds = convs.map(c => c.id);
-  const { count } = await sb.from('messages')
-    .select('id', { count: 'exact', head: true })
-    .in('conversation_id', convIds)
-    .eq('seen', false)
-    .neq('sender_id', currentUser.id);
-  const badge  = document.getElementById('inbox-badge');
-  const mbadge = document.querySelector('[data-view="inbox"] .mobile-nav-badge');
-  const n = count || 0;
-  if (badge)  { badge.textContent  = n; badge.style.display  = n ? '' : 'none'; }
-  if (mbadge) { mbadge.textContent = n; mbadge.style.display = n ? '' : 'none'; }
-}
-
-// ── RACE HISTORY ─────────────────────────────────────────────────
-async function saveRaceHistory({ roomCode, result, myScore, oppScore, totalQ, durationSecs, opponentName }) {
-  if (!currentUser) return;
-  const { error } = await sb.from('pomo_race_history').insert({
-    room_code:     roomCode,
-    player_id:     currentUser.id,
-    player_name:   currentUser.user_metadata?.display_name || 'You',
-    opponent_name: opponentName,
-    result,
-    my_score:      myScore,
-    opp_score:     oppScore,
-    total_q:       totalQ,
-    duration_secs: durationSecs,
-  });
-  if (error) console.warn('saveRaceHistory error:', error.message);
-}
-
-async function loadRaceHistory() {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('pomo_race_history')
-    .select('*')
-    .eq('player_id', currentUser.id)
-    .order('played_at', { ascending: false })
-    .limit(20);
-  if (error) { console.warn('loadRaceHistory error:', error.message); return; }
-  renderRaceHistory(data || []);
-}
-
-function renderRaceHistory(rows) {
-  const list  = document.getElementById('race-history-list');
-  const empty = document.getElementById('race-history-empty');
-  if (!list) return;
-  list.innerHTML = '';
-  if (!rows.length) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  rows.forEach(r => {
-    const resultLabel = r.result === 'win' ? '🏆 Win' : r.result === 'lose' ? '😤 Loss' : '🤝 Tie';
-    const dateStr = new Date(r.played_at).toLocaleDateString('en-IN', {
-      day: 'numeric', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-
-    // Player names — fall back to currentProfile if player_name not stored
-    const myName  = r.player_name || currentProfile?.display_name || 'You';
-    const oppName = r.opponent_name || 'Opponent';
-
-    // Initials for avatars
-    const myInitial  = myName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
-    const oppInitial = oppName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
-
-    const el = document.createElement('div');
-    el.className = `race-hist-card race-hist-card--${r.result}`;
-    el.innerHTML = `
-      <div class="race-hist-avatar race-hist-avatar--me">${escHtml(myInitial || '?')}</div>
-      <div class="race-hist-info">
-        <div class="race-hist-opp">${escHtml(myName)} <span class="race-hist-vs-sep">vs</span> ${escHtml(oppName)}</div>
-        <div class="race-hist-score">${r.my_score ?? '–'}/${r.total_q ?? '–'} — ${r.opp_score ?? '–'}/${r.total_q ?? '–'}</div>
-        <div class="race-hist-date">${dateStr}</div>
-      </div>
-      <div class="race-hist-right">
-        <div class="race-hist-badge">${resultLabel}</div>
-        <button class="btn btn--ghost btn--small btn-race-leaderboard">🏆 Leaderboard</button>
-      </div>
-    `;
-    el.querySelector('.btn-race-leaderboard').addEventListener('click', () => {
-      openRaceLeaderboard({
-        myName, oppName, myInitial, oppInitial,
-        myScore: r.my_score, oppScore: r.opp_score,
-        totalQ: r.total_q, result: r.result,
-        durationSecs: r.duration_secs, dateStr,
-      });
-    });
-    list.appendChild(el);
-  });
-}
-
-function openRaceLeaderboard({ myName, oppName, myInitial, oppInitial, myScore, oppScore, totalQ, result, durationSecs, dateStr }) {
-  const list   = document.getElementById('leaderboard-list');
-  const nameEl = document.getElementById('leaderboard-quiz-name');
-  if (!list) return;
-
-  if (nameEl) nameEl.textContent = `⚡ Race — ${myName} vs ${oppName}`;
-
-  const fmtTime = (s) => {
-    if (!s) return '—';
-    const mm = String(Math.floor(s / 60)).padStart(2, '0');
-    const ss = String(s % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
-  };
-
-  // Build ranked rows: winner first
-  const myPct  = totalQ > 0 ? Math.round((myScore  / totalQ) * 100) : 0;
-  const oppPct = totalQ > 0 ? Math.round((oppScore / totalQ) * 100) : 0;
-
-  const rows = [
-    { name: myName,  initials: myInitial  || '?', score: myScore,  pct: myPct,  isMe: true },
-    { name: oppName, initials: oppInitial || '?', score: oppScore, pct: oppPct, isMe: false },
-  ];
-  // Sort: higher pct wins; on tie → lower time wins (race winner decided by speed)
-  rows.sort((a, b) => {
-    if (b.pct !== a.pct) return b.pct - a.pct;
-    // Same score → whoever won the race goes first
-    if (result === 'win')  return a.isMe ? -1 : 1;
-    if (result === 'lose') return a.isMe ? 1 : -1;
-    return 0; // tie
-  });
-
-  const medals = ['🥇', '🥈'];
-  list.innerHTML = rows.map((r, i) => `
-    <div class="leaderboard-row${r.isMe ? ' leaderboard-row--me' : ''}">
-      <div class="leaderboard-row-main">
-        <span class="lb-rank">${medals[i]}</span>
-        <div class="friend-avatar friend-avatar--sm">${escHtml(r.initials)}</div>
-        <div class="lb-info">
-          <strong>${escHtml(r.isMe ? 'You' : r.name)}</strong>
-          <span>${escHtml(r.name)}</span>
-        </div>
-        <div class="lb-score">${r.pct}%</div>
-        <div class="lb-time">${r.score ?? '–'}/${totalQ ?? '–'}</div>
-      </div>
-    </div>
-  `).join('');
-
-  openModal('modal-leaderboard');
-}
-
-// ── SHARED QUIZ SESSIONS (jab man ho tab start karein) ─────────
-async function loadSharedSessions() {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('quiz_sessions')
-    .select('*')
-    .or(`host_id.eq.${currentUser.id},member_ids.cs.{${currentUser.id}}`)
-    .order('created_at', { ascending: false })
-    .limit(20);
-  if (error) { console.warn('loadSharedSessions error:', error.message); return; }
-  renderSharedSessions(data || []);
-}
-
-async function renderSharedSessions(sessions) {
-  const list  = document.getElementById('shared-sessions-list');
-  const empty = document.getElementById('shared-sessions-empty');
-  if (!list) return;
-  list.innerHTML = '';
-
-  if (!sessions.length) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  // Find which sessions the current user has already attempted
-  const { data: myAttempts } = await sb.from('quiz_attempts')
-    .select('session_id, score, total')
-    .eq('user_id', currentUser.id)
-    .in('session_id', sessions.map(s => s.id));
-  const attemptedIds = new Set((myAttempts || []).map(a => a.session_id));
-
-  sessions.forEach(s => {
-    const qCount = Array.isArray(s.questions) ? s.questions.length : 0;
-    const timeLabel = s.time_limit_seconds > 0
-      ? `⏱ ${Math.floor(s.time_limit_seconds/60)}m ${s.time_limit_seconds%60}s`
-      : '⏱ No time limit';
-    const isHost = s.host_id === currentUser.id;
-    const attempted = attemptedIds.has(s.id);
-
-    const el = document.createElement('div');
-    el.className = 'history-item';
-    el.innerHTML = `
-      <div class="history-item-top">
-        <strong>${escHtml(s.title)}</strong>
-        <span class="history-score ${attempted ? 'score--good' : 'score--ok'}">
-          ${attempted ? '✅ Attempted' : '🕒 Pending'}
-        </span>
-      </div>
-      <div class="history-item-meta">
-        <span>${qCount} questions</span>
-        <span>${timeLabel}</span>
-        <span>${isHost ? 'Shared by you' : 'Shared by ' + escHtml(s.host_name || 'a friend')}</span>
-      </div>
-      <div class="result-actions" style="margin-top:0.5rem">
-        <button class="btn btn--primary btn--small btn-session-start">${attempted ? '🔁 Attempt Again' : '▶ Start Quiz'}</button>
-        <button class="btn btn--ghost btn--small btn-session-leaderboard">🏆 Leaderboard</button>
-      </div>
-    `;
-
-    el.querySelector('.btn-session-start').addEventListener('click', () => {
-      activeQuizId        = s.quiz_id;
-      activeQuizTitle     = s.title;
-      activeQuizQuestions = Array.isArray(s.questions) ? s.questions : [];
-      activeFullQuizQuestions = [];
-      activeQuizSessionId = s.id;
-      document.getElementById('setup-quiz-title').textContent = s.title;
-      document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
-      applySessionTimer(s.time_limit_seconds || 0);
-      const rFrom = document.getElementById('range-from');
-      const rTo   = document.getElementById('range-to');
-      if (rFrom && rTo) {
-        rFrom.value = 1;
-        rTo.value = activeQuizQuestions.length;
-        rFrom.dispatchEvent(new Event('change'));
-      }
-      openQuizSetup(null, true);
-    });
-
-    el.querySelector('.btn-session-leaderboard').addEventListener('click', () => {
-      renderSessionLeaderboard(s.id);
-    });
-
-    list.appendChild(el);
-  });
-}
-
-
-// Bookmark any question object directly (used by flashcard buttons)
-// Toggles the bookmark: returns true if now bookmarked, false if removed, null on error.
-async function bookmarkQuestion(q) {
-  if (!currentUser || !q) return null;
-  if (!activeQuizId) { toast('Open this quiz from its folder to bookmark questions.', 'error'); return null; }
-
-  const idx = activeQuizQuestions.indexOf(q);
-  const questionIndex = idx >= 0 ? idx : 0;
-
-  // Check if already bookmarked
-  const { data: existing } = await sb.from('bookmarks')
-    .select('id')
-    .eq('user_id', currentUser.id)
-    .eq('quiz_id', activeQuizId)
-    .eq('question_index', questionIndex)
-    .maybeSingle();
-
-  if (existing) {
-    const { error } = await sb.from('bookmarks').delete().eq('id', existing.id);
-    if (error) { toast('Could not remove bookmark.', 'error'); return null; }
-    toast('Bookmark removed.', 'info');
-    return false;
-  }
+.option-item.incorrect {
+  border-color: var(--error);
+  background: var(--error-soft);
+}
 
-  const { error } = await sb.from('bookmarks').upsert({
-    user_id: currentUser.id,
-    quiz_id: activeQuizId,
-    quiz_title: activeQuizTitle || '',
-    question_index: questionIndex,
-    question_text: q.question || '',
-    options: Array.isArray(q.options) ? q.options : [],
-    correct_index: typeof q.correctIndex === 'number' ? q.correctIndex : null,
-    explanation: q.explanation || ''
-  }, { onConflict: 'user_id,quiz_id,question_index' });
-
-  if (!error) { toast('Question bookmarked!', 'success'); return true; }
-  toast('Could not bookmark question.', 'error');
-  return null;
-}
-
-// Returns a Set of "quizId:questionIndex" keys for the current user's bookmarks.
-let bookmarksIndexCache = new Set();
-async function refreshBookmarksIndex() {
-  bookmarksIndexCache = new Set();
-  if (!currentUser) return bookmarksIndexCache;
-  const { data, error } = await sb.from('bookmarks')
-    .select('quiz_id, question_index')
-    .eq('user_id', currentUser.id);
-  if (!error && data) {
-    data.forEach(b => bookmarksIndexCache.add(`${b.quiz_id}:${b.question_index}`));
-  }
-  return bookmarksIndexCache;
-}
-
-async function bookmarkCurrentQuestion() {
-  if (!currentUser || !activeQuizId) return;
-  const q = activeQuizQuestions[currentQ];
-  if (!q) return;
-
-  const { error } = await sb.from('bookmarks').upsert({
-    user_id: currentUser.id,
-    quiz_id: activeQuizId,
-    quiz_title: activeQuizTitle || '',
-    question_index: currentQ,
-    question_text: q.question || '',
-    options: Array.isArray(q.options) ? q.options : [],
-    correct_index: typeof q.correctIndex === 'number' ? q.correctIndex : null,
-    explanation: q.explanation || ''
-  }, { onConflict: 'user_id,quiz_id,question_index' });
-
-  if (!error) toast('Question bookmarked!', 'success');
-}
-
-let bookmarksCache = [];
-let bookmarksFilter = 'all'; // 'all' or a quiz_id
-
-async function loadBookmarks() {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('bookmarks')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: false });
-  if (error) return;
-  bookmarksCache = data || [];
-  renderBookmarkFilters();
-  renderBookmarks();
-}
-
-// Builds the "All" + per-quiz filter chips above the bookmark grid.
-function renderBookmarkFilters() {
-  const bar = document.getElementById('bookmark-filter-bar');
-  if (!bar) return;
-
-  // Unique quizzes among the bookmarks, in first-seen order
-  const seen = new Map();
-  bookmarksCache.forEach(b => {
-    if (!seen.has(b.quiz_id)) seen.set(b.quiz_id, b.quiz_title || 'Untitled Quiz');
-  });
-
-  // Reset filter if it points to a quiz no longer present
-  if (bookmarksFilter !== 'all' && !seen.has(bookmarksFilter)) bookmarksFilter = 'all';
-
-  let html = `<button class="btn btn--small bookmark-filter-chip ${bookmarksFilter === 'all' ? 'active' : ''}" data-bookmark-filter="all">All (${bookmarksCache.length})</button>`;
-  seen.forEach((title, quizId) => {
-    const count = bookmarksCache.filter(b => b.quiz_id === quizId).length;
-    html += `<button class="btn btn--small bookmark-filter-chip ${bookmarksFilter === quizId ? 'active' : ''}" data-bookmark-filter="${quizId}">${escHtml(title)} (${count})</button>`;
-  });
-  bar.innerHTML = html;
-
-  bar.querySelectorAll('[data-bookmark-filter]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      bookmarksFilter = btn.dataset.bookmarkFilter;
-      renderBookmarkFilters();
-      renderBookmarks();
-    });
-  });
-}
-
-function renderBookmarks() {
-  const grid = document.getElementById('bookmark-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-
-  const bookmarks = bookmarksFilter === 'all'
-    ? bookmarksCache
-    : bookmarksCache.filter(b => b.quiz_id === bookmarksFilter);
-
-  const empty = document.getElementById('bookmarks-empty');
-  if (bookmarks.length === 0) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  bookmarks.forEach((b, i) => {
-    const card = document.createElement('div');
-    card.className = 'flash-card flash-card--bookmarked';
-    card.dataset.bookmarkId = b.id;
-
-    const options = Array.isArray(b.options) ? b.options : [];
-    const hasAnswer = typeof b.correct_index === 'number' && options[b.correct_index] !== undefined;
-    const optionsList = options.map((opt, idx) => {
-      const marker = String.fromCharCode(65 + idx);
-      const isCorrect = idx === b.correct_index;
-      return `<li class="${isCorrect ? 'correct-opt' : ''}">`
-        + `<span class="option-marker">${marker}</span>${escHtml(opt)}</li>`;
-    }).join('');
-
-    card.innerHTML = `
-      <div class="flash-card-inner">
-        <div class="flash-card-face flash-card-front">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-            <div class="flash-actions">
-              <button class="icon-btn btn-remove-bookmark" title="Remove bookmark">🗑️</button>
-            </div>
-          </div>
-          <p class="flash-question">${escHtml(b.question_text)}</p>
-          ${optionsList ? `<ul class="flash-card-options">${optionsList}</ul>` : ''}
-          <p class="flash-hint">Click to ${hasAnswer ? 'reveal answer' : 'flip'}</p>
-        </div>
-        <div class="flash-card-face flash-card-back">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-          </div>
-          ${hasAnswer
-            ? `<p class="flash-answer-line">✓ ${escHtml(options[b.correct_index])}</p>`
-            : `<p class="flash-answer-line">Bookmarked question</p>`}
-          ${b.explanation ? `<p class="flash-explanation-line">${escHtml(b.explanation)}</p>` : ''}
-          ${!hasAnswer ? `<p class="flash-explanation-line" style="opacity:0.6">Answer not stored — open the original quiz to review.</p>` : ''}
-          <p class="flash-card-source">${escHtml(b.quiz_title || '')}</p>
-        </div>
-      </div>
-    `;
-    card.addEventListener('click', e => {
-      if (e.target.closest('.icon-btn')) return;
-      card.classList.toggle('flipped');
-    });
-    card.querySelector('.btn-remove-bookmark').addEventListener('click', async e => {
-      e.stopPropagation();
-      await sb.from('bookmarks').delete().eq('id', b.id);
-      bookmarksCache = bookmarksCache.filter(x => x.id !== b.id);
-      bookmarksIndexCache.delete(`${b.quiz_id}:${b.question_index}`);
-      renderBookmarkFilters();
-      renderBookmarks();
-      toast('Bookmark removed.', 'info');
-    });
-    grid.appendChild(card);
-  });
-}
-
-// ── NOTES ────────────────────────────────────────────────────
-async function saveNote(body, tags) {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('notes').insert({
-    user_id: currentUser.id,
-    body,
-    tags
-  }).select().single();
-  if (error) { toast('Could not save note: ' + error.message, 'error'); return null; }
-  return data;
-}
-
-async function loadNotes() {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('notes')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: false });
-  if (error) return;
-  renderSavedNotes(data || []);
-}
-
-function renderSavedNotes(notes) {
-  const list = document.getElementById('notes-list');
-  if (!list) return;
-  list.querySelectorAll('.note-card[data-note-id]').forEach(c => c.remove());
-  const empty = document.getElementById('notes-empty');
-  if (notes.length === 0) { if (empty) empty.style.display = 'block'; return; }
-  if (empty) empty.style.display = 'none';
-
-  notes.forEach(note => {
-    const card = document.createElement('article');
-    card.className = 'note-card';
-    card.dataset.noteId = note.id;
-    const tagsHtml = (note.tags || []).map(t =>
-      `<span class="note-tag-chip note-tag-chip--${t.type}">${t.type === 'folder' ? '📁' : '📝'} ${escHtml(t.label)}</span>`
-    ).join('');
-    card.innerHTML = `
-      <div class="note-card-head">
-        <div class="note-card-meta">
-          <span class="note-card-date">${new Date(note.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-        </div>
-        <div class="note-card-actions">
-          <button class="icon-btn btn-delete-note" title="Delete note">🗑️</button>
-        </div>
-      </div>
-      <p class="note-card-body">${escHtml(note.body)}</p>
-      ${tagsHtml ? `<div class="note-card-tags">${tagsHtml}</div>` : ''}
-    `;
-    card.querySelector('.btn-delete-note').addEventListener('click', async () => {
-      await sb.from('notes').delete().eq('id', note.id);
-      card.remove();
-      toast('Note deleted.', 'info');
-    });
-    list.appendChild(card);
-  });
-}
-
-// ── FRIENDS ───────────────────────────────────────────────────
-let friendsCache      = [];  // accepted friends (profiles)
-let friendshipsCache  = [];  // all friendship rows involving current user (any status)
-
-async function loadFriends() {
-  if (!currentUser) return;
-
-  // Get accepted friendships where user is either side
-  const { data: sent     } = await sb.from('friendships').select('*, profiles!friendships_addressee_id_fkey(*)').eq('requester_id', currentUser.id).eq('status', 'accepted');
-  const { data: received } = await sb.from('friendships').select('*, profiles!friendships_requester_id_fkey(*)').eq('addressee_id', currentUser.id).eq('status', 'accepted');
-  const { data: pending  } = await sb.from('friendships').select('*, profiles!friendships_requester_id_fkey(*)').eq('addressee_id', currentUser.id).eq('status', 'pending');
-  const { data: outgoing } = await sb.from('friendships').select('id, addressee_id, status').eq('requester_id', currentUser.id);
-  const { data: incoming } = await sb.from('friendships').select('id, requester_id, status').eq('addressee_id', currentUser.id);
-
-  const friends = [
-    ...(sent || []).map(r => r.profiles),
-    ...(received || []).map(r => r.profiles)
-  ].filter(Boolean);
-
-  friendsCache = friends;
-
-  // Build a flat list of { userId, status } for quick lookups in search/add-friend buttons
-  friendshipsCache = [
-    ...(outgoing || []).map(r => ({ userId: r.addressee_id, status: r.status })),
-    ...(incoming || []).map(r => ({ userId: r.requester_id, status: r.status }))
-  ];
-
-  renderFriends(friends, pending || []);
-  updateFriendBadge(pending?.length || 0);
-}
-
-// Returns 'friend' | 'pending' | 'none' for a given user id
-function getFriendStatus(userId) {
-  const friend = friendsCache.find(f => f.id === userId);
-  if (friend) return 'friend';
-  const rel = friendshipsCache.find(r => r.userId === userId && r.status === 'pending');
-  if (rel) return 'pending';
-  return 'none';
-}
-
-function renderFriends(friends, pendingRequests) {
-  const list = document.getElementById('friends-list');
-  if (!list) return;
-  list.querySelectorAll('.friend-card[data-friend-id], .friend-list-empty').forEach(c => c.remove());
-
-  const friendsCount = document.getElementById('friends-count');
-  if (friendsCount) friendsCount.textContent = friends.length;
-
-  if (friends.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'friend-list-empty';
-    empty.innerHTML = `
-      <span class="friend-list-empty-icon">🤝</span>
-      <h4>No friends yet</h4>
-      <p>Search for classmates by name or roll number above to send a friend
-        request and start sharing quizzes.</p>
-    `;
-    list.appendChild(empty);
-  }
+.option-marker {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
 
-  friends.forEach(friend => {
-    const initials = (friend.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const card = document.createElement('div');
-    card.className = 'friend-card';
-    card.dataset.friendId = friend.id;
-    card.innerHTML = `
-      <div class="friend-avatar">${escHtml(initials)}</div>
-      <div class="friend-info">
-        <strong>${escHtml(friend.display_name)}</strong>
-        <span class="friend-rollno">${escHtml(friend.roll_no || '')}</span>
-      </div>
-      <div class="friend-actions">
-        <button class="btn btn--ghost btn--small btn-chat-friend" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">💬 Chat</button>
-        <button class="btn btn--ghost btn--small btn-challenge-friend" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">⚔️ Challenge</button>
-        <button class="btn btn--ghost btn--small btn-remove-friend" data-friend-id="${friend.id}">Remove</button>
-      </div>
-      <span class="friend-card-chevron">›</span>
-    `;
-    card.addEventListener('click', e => {
-      if (e.target.closest('.friend-actions')) return;
-      openFriendProfile(friend);
-    });
-    card.querySelector('.btn-remove-friend').addEventListener('click', async () => {
-      if (!confirm('Remove this friend?')) return;
-      await sb.from('friendships').delete()
-        .or(`and(requester_id.eq.${currentUser.id},addressee_id.eq.${friend.id}),and(requester_id.eq.${friend.id},addressee_id.eq.${currentUser.id})`);
-      friendsCache = friendsCache.filter(f => f.id !== friend.id);
-      card.remove();
-      toast('Friend removed.', 'info');
-    });
-    card.querySelector('.btn-chat-friend').addEventListener('click', e => {
-      e.stopPropagation();
-      openChat(friend.id, friend.display_name);
-    });
-    card.querySelector('.btn-challenge-friend').addEventListener('click', async () => {
-      const quizzes = await loadAllQuizzesForUser();
-      if (!quizzes.length) {
-        toast('Create a quiz first to send a challenge.', 'info');
-        return;
-      }
-
-      const picker = document.getElementById('share-quiz-picker');
-      const pickerBlock = document.getElementById('share-quiz-picker-block');
-      picker.innerHTML = quizzes.map(q =>
-        `<option value="${q.id}">${escHtml(q.title)}</option>`).join('');
-      pickerBlock.style.display = '';
-
-      const applyQuiz = (q) => {
-        currentShareQuizId = q.id;
-        const qCount = Array.isArray(q.questions) ? q.questions.length : 0;
-        initShareSelection(qCount);
-        setupShareModal(q);
-      };
-
-      picker.onchange = () => {
-        const q = quizzes.find(qq => qq.id === picker.value);
-        if (q) applyQuiz(q);
-      };
-
-      applyQuiz(quizzes[0]);
-      picker.value = quizzes[0].id;
-
-      openModal('modal-share');
-
-      // Switch to "To Friends" tab
-      const friendTabBtn = document.querySelector('.share-tabs .tab-btn[data-share-tab="friend"]');
-      friendTabBtn?.click();
-
-      // Pre-check this friend and enable "Send as Challenge"
-      setTimeout(() => {
-        const cb = document.querySelector(
-          `#share-friend-pick-list input[data-friend-id="${friend.id}"]`);
-        if (cb) cb.checked = true;
-        const challengeCb = document.getElementById('share-as-challenge-friend');
-        if (challengeCb) challengeCb.checked = true;
-      }, 0);
-    });
-    list.appendChild(card);
-  });
-
-  // Pending requests section
-  const pendingSection = document.getElementById('friend-requests-section');
-  const pendingList    = document.getElementById('friend-requests-list');
-  if (!pendingSection || !pendingList) return;
-
-  const reqCount = document.getElementById('friend-req-count');
-  if (reqCount) reqCount.textContent = pendingRequests.length;
-
-  pendingList.innerHTML = '';
-  if (pendingRequests.length === 0) {
-    pendingSection.style.display = 'none';
-  } else {
-    pendingSection.style.display = 'block';
-    pendingRequests.forEach(req => {
-      const p = req.profiles;
-      if (!p) return;
-      const initials = (p.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      const row = document.createElement('div');
-      row.className = 'friend-request-row';
-      row.innerHTML = `
-        <div class="friend-info"><strong>${escHtml(p.display_name)}</strong><span>${escHtml(p.roll_no || '')}</span></div>
-        <div class="friend-actions">
-          <button class="btn btn--primary btn--small btn-accept-request" data-req-id="${req.id}">Accept</button>
-          <button class="btn btn--ghost btn--small btn-decline-request" data-req-id="${req.id}">Decline</button>
-        </div>
-      `;
-      row.querySelector('.btn-accept-request').addEventListener('click', async () => {
-        const { error } = await sb.from('friendships').update({ status: 'accepted' }).eq('id', req.id);
-        if (error) { toast('Could not accept request: ' + error.message, 'error'); return; }
-        toast(`You and ${p.display_name} are now friends!`, 'success');
-        loadFriends();
-      });
-      row.querySelector('.btn-decline-request').addEventListener('click', async () => {
-        const { error } = await sb.from('friendships').update({ status: 'declined' }).eq('id', req.id);
-        if (error) { toast('Could not decline request: ' + error.message, 'error'); return; }
-        row.remove();
-        loadFriends();
-      });
-      pendingList.appendChild(row);
-    });
-  }
+.option-text { font-size: 0.95rem; }
+
+.player-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
-function updateFriendBadge(count) {
-  const badge = document.getElementById('friend-req-badge');
-  if (badge) {
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
-  const mobileBadge = document.getElementById('friend-req-badge-mobile');
-  if (mobileBadge) {
-    mobileBadge.textContent = count;
-    mobileBadge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
+.player-jump {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  flex: 1;
+  justify-content: center;
 }
 
-async function searchUsers(query) {
-  if (!query || query.length < 2) return [];
-  const { data } = await sb.from('profiles')
-    .select('id, display_name, roll_no')
-    .or(`display_name.ilike.%${query}%,roll_no.ilike.%${query}%`)
-    .neq('id', currentUser?.id)
-    .limit(8);
-  return data || [];
-}
-
-async function sendFriendRequest(toUserId) {
-  const { error } = await sb.from('friendships').insert({
-    requester_id: currentUser.id,
-    addressee_id: toUserId
-  });
-  if (error) {
-    if (error.message.includes('duplicate')) toast('Request already sent.', 'info');
-    else toast('Could not send request: ' + error.message, 'error');
-    return;
-  }
-  toast('Friend request sent!', 'success');
-}
-
-// Returns the label for a user's add-friend button based on current relationship status
-function friendButtonLabel(userId) {
-  const status = getFriendStatus(userId);
-  if (status === 'friend')  return 'Already friends';
-  if (status === 'pending') return 'Request sent';
-  return 'Add Friend';
-}
-
-// Wires a button element to send a friend request, disabling it and updating
-// its label appropriately. Call this after inserting the button into the DOM.
-function wireAddFriendButton(btn, userId) {
-  if (!btn) return;
-  const status = getFriendStatus(userId);
-  if (status !== 'none') {
-    btn.textContent = status === 'friend' ? 'Already friends' : 'Request sent';
-    btn.disabled = true;
-    btn.classList.add('btn--disabled');
-    return;
-  }
-  btn.addEventListener('click', async e => {
-    e.stopPropagation();
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.textContent = 'Sent ✓';
-    btn.classList.add('btn--disabled');
-    await sendFriendRequest(userId);
-    friendshipsCache.push({ userId, status: 'pending' });
-  });
-}
-
-async function sendChallenge(toUserId, toName, quizId, quizTitle, sessionId, timeLimitSeconds) {
-  quizId = quizId || activeQuizId;
-  quizTitle = quizTitle || activeQuizTitle;
-  if (!quizId) { toast('Open a quiz first to send a challenge.', 'info'); return; }
-
-  // Recipient needs to be able to read this quiz row; make it public.
-  await sb.from('quizzes').update({ is_public: true }).eq('id', quizId);
-  const cachedQuiz = quizzesCache.find(q => q.id === quizId);
-  if (cachedQuiz) cachedQuiz.is_public = true;
-
-  // Use the user's best attempt on this quiz as the challenge score
-  let score = null;
-  const { data: attempts } = await sb.from('quiz_attempts')
-    .select('score, total')
-    .eq('user_id', currentUser.id)
-    .eq('quiz_id', quizId)
-    .order('score', { ascending: false })
-    .limit(1);
-  if (attempts && attempts.length > 0) {
-    score = attempts[0].score;
-  } else if (quizId === activeQuizId) {
-    // Fallback: no saved attempt yet, use current in-progress state
-    score = quizState.filter(q => q.answered && activeQuizQuestions[quizState.indexOf(q)]
-      && q.optionIndex === activeQuizQuestions[quizState.indexOf(q)].correctIndex).length;
-  } else {
-    score = 0;
-  }
+/* =========================================================
+   RESULT / OVERVIEW
+   ========================================================= */
+.result-wrap { max-width: 760px; }
 
-  await sb.from('inbox_messages').insert({
-    to_user_id: toUserId,
-    from_user_id: currentUser.id,
-    type: 'challenge',
-    title: `${currentProfile?.display_name || 'Someone'} challenged you on "${quizTitle}"`,
-    body: { quiz_id: quizId, score, session_id: sessionId || null, time_limit_seconds: timeLimitSeconds || 0 }
-  });
-  toast(`Challenge sent to ${toName}!`, 'success');
-}
-
-// ── INBOX ─────────────────────────────────────────────────────
-let inboxCache = [];
-
-async function loadInbox() {
-  if (!currentUser) return;
-
-  // ── 24hr auto-expire: delete unread messages older than 24hr ──
-  const expire24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  sb.from('inbox_messages')
-    .delete()
-    .eq('to_user_id', currentUser.id)
-    .eq('is_read', false)
-    .lt('created_at', expire24h)
-    .then(({ error }) => { if (error) console.warn('Auto-expire error:', error.message); });
-
-  const { data, error } = await sb.from('inbox_messages')
-    .select('*, from_profile:profiles!inbox_messages_from_user_id_fkey(display_name, roll_no)')
-    .eq('to_user_id', currentUser.id)
-    .order('created_at', { ascending: false })
-    .limit(30);
-  if (error) return;
-  inboxCache = data || [];
-  renderInbox(inboxCache);
-  updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
-
-  // Load "Shared by Me" section
-  loadSharedByMe();
-}
-
-function renderInbox(messages) {
-  const list = document.getElementById('inbox-list');
-  if (!list) return;
-  list.querySelectorAll('.inbox-item[data-msg-id]').forEach(i => i.remove());
-  const empty = document.getElementById('inbox-empty');
-
-  if (messages.length === 0) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  messages.forEach(msg => {
-    const senderName = msg.from_profile?.display_name || 'Someone';
-    const isChallenge = msg.type === 'challenge';
-    const item = document.createElement('div');
-    item.className = `inbox-item inbox-item--${msg.type} ${msg.is_read ? '' : 'inbox-item--unread'}`;
-    item.dataset.msgId = msg.id;
-    item.innerHTML = `
-      <div class="inbox-item-top">
-        <span class="inbox-sender"><strong>${escHtml(senderName)}</strong></span>
-        <span class="inbox-time">${timeAgo(msg.created_at)}</span>
-      </div>
-      <p class="inbox-title">${escHtml(msg.title)}</p>
-      ${isChallenge && msg.body?.score != null ? `<span class="score-highlight">${msg.body.score} pts</span>` : ''}
-      <div class="inbox-actions">
-        ${msg.body?.quiz_id ? `<button class="btn btn--primary btn--small btn-accept-quiz-inbox">▶ ${isChallenge ? 'Accept Challenge' : 'Start Quiz'}</button>` : ''}
-${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small btn-save-quiz-inbox">📥 Save to Library</button>` : ''}
-        ${msg.type === 'chapter' && msg.body?.folder_id ? `<button class="btn btn--primary btn--small btn-accept-chapter-inbox">📥 Add to Library</button>` : ''}
-        <button class="btn btn--ghost btn--small btn-inbox-dismiss">Dismiss</button>
-      </div>
-    `;
-
-    // Mark read on click
-    item.addEventListener('click', async () => {
-      if (!msg.is_read) {
-        msg.is_read = true;
-        item.classList.remove('inbox-item--unread');
-        await sb.from('inbox_messages').update({ is_read: true }).eq('id', msg.id);
-        updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
-      }
-    });
-
-    item.querySelector('.btn-inbox-dismiss')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      await sb.from('inbox_messages').delete().eq('id', msg.id);
-      item.style.opacity = '0';
-      item.style.transition = 'opacity .25s';
-      setTimeout(() => item.remove(), 250);
-      inboxCache = inboxCache.filter(m => m.id !== msg.id);
-      updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
-    });
-
-    item.querySelector('.btn-accept-quiz-inbox')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      // Load the shared quiz
-      if (msg.body?.quiz_id) {
-        const { data: quiz } = await sb.from('quizzes').select('*').eq('id', msg.body.quiz_id).single();
-        if (quiz) {
-          activeQuizId        = quiz.id;
-          activeQuizTitle     = quiz.title;
-          activeQuizQuestions = quiz.questions || [];
-          activeQuizSessionId = msg.body.session_id || null;
-          document.getElementById('setup-quiz-title').textContent  = quiz.title;
-          document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
-          applySessionTimer(msg.body.time_limit_seconds || 0);
-          const rFrom = document.getElementById('range-from');
-          const rTo   = document.getElementById('range-to');
-          if (rFrom && rTo) {
-            rFrom.value = 1;
-            rTo.value = activeQuizQuestions.length;
-            rFrom.dispatchEvent(new Event('change'));
-          }
-          openQuizSetup(isChallenge ? { from: senderName, score: msg.body.score } : null, true);
-        } else {
-          toast('Quiz not found or was deleted.', 'error');
-        }
-      }
-    });
-
-    item.querySelector('.btn-save-quiz-inbox')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (msg.body?.quiz_id) {
-        await importSharedQuiz(msg.body.quiz_id, msg.title, senderName);
-      }
-    });
-
-    item.querySelector('.btn-accept-chapter-inbox')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (msg.body?.folder_id) {
-        const { data: folder } = await sb.from('folders').select('name').eq('id', msg.body.folder_id).single();
-        await importSharedChapter(msg.body.folder_id, folder?.name);
-      }
-    });
-
-    list.appendChild(item);
-  });
-}
-
-// ── SHARED BY ME ─────────────────────────────
-async function loadSharedByMe() {
-  if (!currentUser) return;
-  const list = document.getElementById('shared-by-me-list');
-  if (!list) return;
-  list.innerHTML = '<p class="hint" style="padding:0.5rem 0">Loading…</p>';
-
-  const { data, error } = await sb.from('inbox_messages')
-    .select('id, to_user_id, title, type, is_read, created_at, body, to_profile:profiles!inbox_messages_to_user_id_fkey(display_name)')
-    .eq('from_user_id', currentUser.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  if (error || !data?.length) {
-    list.innerHTML = '<p class="hint" style="padding:0.5rem 0;color:var(--slate)">Nothing shared yet.</p>';
-    return;
-  }
+.result-head { margin-bottom: 1.5rem; }
+.result-head h2 { font-size: 1.6rem; }
 
-  const now = Date.now();
-  const items = data.map(m => {
-    const sentAt = new Date(m.created_at).getTime();
-    const msLeft = (sentAt + 24 * 3600 * 1000) - now;
-    const expired = msLeft <= 0;
-    const hoursLeft = expired ? 0 : Math.ceil(msLeft / 3600000);
-    return { ...m, expired, hoursLeft };
-  });
-
-  list.innerHTML = '';
-  items.forEach(m => {
-    const recipientName = m.to_profile?.display_name || 'Friend';
-    const typeIcon = m.type === 'challenge' ? '⚔️' : m.type === 'chapter' ? '📁' : '📝';
-    const statusBadge = m.is_read
-      ? '<span class="shared-status shared-status--accepted">✓ Accepted</span>'
-      : m.expired
-        ? '<span class="shared-status shared-status--expired">Expired</span>'
-        : `<span class="shared-status shared-status--pending">⏱ ${m.hoursLeft}h left</span>`;
-
-    const row = document.createElement('div');
-    row.className = 'shared-by-me-row' + (m.expired && !m.is_read ? ' shared-by-me-row--expired' : '');
-    row.dataset.msgId = m.id;
-    row.innerHTML = `
-      <div class="shared-by-me-icon">${typeIcon}</div>
-      <div class="shared-by-me-info">
-        <div class="shared-by-me-title">${escHtml(m.title)}</div>
-        <div class="shared-by-me-meta">→ ${escHtml(recipientName)} · ${timeAgo(m.created_at)}</div>
-      </div>
-      <div class="shared-by-me-right">
-        ${statusBadge}
-        <button class="btn btn--ghost btn--small shared-by-me-remove" title="Remove">🗑</button>
-      </div>
-    `;
-    row.querySelector('.shared-by-me-remove').addEventListener('click', async e => {
-      e.stopPropagation();
-      await sb.from('inbox_messages').delete().eq('id', m.id);
-      row.style.opacity = '0'; row.style.transition = 'opacity .2s';
-      setTimeout(() => { row.remove(); if (!list.querySelector('.shared-by-me-row')) list.innerHTML = '<p class="hint" style="padding:0.5rem 0;color:var(--slate)">Nothing shared yet.</p>'; }, 220);
-      toast('Removed.', 'info');
-    });
-    list.appendChild(row);
-  });
-}
-
-// Wire refresh button
-document.getElementById('btn-refresh-shared-by-me')?.addEventListener('click', loadSharedByMe);
-
-function updateInboxBadge(count) {
-  const badge = document.getElementById('inbox-badge');
-  const mobileBadge = document.querySelector('.mobile-nav .nav-link[data-view="inbox"] .mobile-nav-badge');
-  if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline-flex' : 'none'; }
-  if (mobileBadge) { mobileBadge.textContent = count; mobileBadge.style.display = count > 0 ? 'inline-flex' : 'none'; }
-}
-
-async function importSharedChapter(folderId, folderName, targetParentId, targetParentName) {
-  if (!targetParentId) {
-    // Show picker — let user choose where the root copy lands
-    showDestinationPicker(
-      (folderName || 'Shared Chapter') + ' — choose where to save',
-      (pId, pName) => importSharedChapter(folderId, folderName, pId, pName)
-    );
-    return;
-  }
+.result-summary {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 1.75rem;
+  flex-wrap: wrap;
+}
 
-  toast('Importing…', 'info');
-
-  // Step 1: fetch ALL folders in tree (public only) + ALL quizzes
-  const allSrcFolderIds = [folderId];
-  const queue = [folderId];
-  while (queue.length) {
-    const curr = queue.shift();
-    const { data: children } = await sb.from('folders').select('id, name, parent_id').eq('parent_id', curr).eq('is_public', true);
-    (children || []).forEach(f => { allSrcFolderIds.push(f.id); queue.push(f.id); });
-  }
+.score-ring {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 4px solid var(--saffron);
+}
 
-  const [{ data: srcFolders }, { data: srcQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, parent_id').in('id', allSrcFolderIds).eq('is_public', true),
-    sb.from('quizzes').select('title, questions, folder_id').in('folder_id', allSrcFolderIds).eq('is_public', true)
-  ]);
-
-  if (!srcQuizzes?.length) {
-    toast('That chapter has no quizzes (or is not shared publicly yet).', 'error');
-    return;
-  }
+.score-value {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--saffron);
+}
 
-  // Step 2: create folders one by one (need real IDs for parent_id chain)
-  // but fetch children was already done — just insert in BFS order
-  const srcFolderMap = {};
-  (srcFolders || []).forEach(f => srcFolderMap[f.id] = f);
-  const srcIdToNewId = {};
-  const bfsQueue = [{ srcId: folderId, parentNewId: targetParentId || null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
-
-  while (bfsQueue.length) {
-    const { srcId, parentNewId, name } = bfsQueue.shift();
-    const { data: newFolder, error: fErr } = await sb.from('folders').insert({
-      user_id: currentUser.id, name, parent_id: parentNewId, is_public: false
-    }).select().single();
-    if (fErr || !newFolder) { toast('Could not create folder.', 'error'); return; }
-    srcIdToNewId[srcId] = newFolder.id;
-    foldersCache.unshift(newFolder);
-    // enqueue children from already-fetched data
-    (srcFolders || []).filter(f => f.parent_id === srcId)
-      .forEach(c => bfsQueue.push({ srcId: c.id, parentNewId: newFolder.id, name: c.name }));
-  }
+.score-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(250,246,238,0.6);
+}
 
-  // Step 3: bulk insert ALL quizzes in one call
-  const quizzesToInsert = (srcQuizzes || []).map(q => ({
-    user_id: currentUser.id,
-    folder_id: srcIdToNewId[q.folder_id],
-    title: q.title,
-    questions: q.questions,
-    is_public: false
-  })).filter(q => q.folder_id); // skip if folder mapping missing
-
-  const { error: qErr } = await sb.from('quizzes').insert(quizzesToInsert);
-  if (qErr) { toast('Could not import quizzes: ' + qErr.message, 'error'); return; }
-
-  if (typeof renderFolders === 'function') renderFolders();
-  toast(`"${(folderName || 'Chapter') + ' (shared)'}" added! (${quizzesToInsert.length} quizzes)`, 'success');
-}
-
-// ── SHARE CHAPTER MODAL (real data) ─────────────────────────────
-function setupShareChapterModal() {
-  const folder = foldersCache.find(f => f.id === activeFolderId);
-  if (!folder) return;
-
-  // ── Inject styles once ───────────────────────────────────────
-  document.getElementById('scqp-style')?.remove();
-  {
-    const s = document.createElement('style');
-    s.id = 'scqp-style';
-    s.textContent = `
-      #scqp-wrap {
-        margin: 0.75rem 0 0;
-      }
-      #scqp-wrap .scqp-section-label {
-        font-size: 0.78rem; font-weight: 600; color: var(--slate);
-        text-transform: uppercase; letter-spacing: .04em;
-        margin-bottom: 0.4rem;
-      }
-      /* Segment control */
-      .scqp-seg {
-        display: flex;
-        border: 1.5px solid var(--line);
-        border-radius: var(--radius-md);
-        overflow: hidden;
-        margin-bottom: 0.65rem;
-      }
-      .scqp-seg-btn {
-        flex: 1; padding: 0.48rem 0.5rem;
-        font-size: 0.83rem; font-weight: 600;
-        border: none; cursor: pointer;
-        background: transparent;
-        color: var(--slate);
-        transition: background .15s, color .15s;
-        font-family: var(--font-body);
-      }
-      .scqp-seg-btn + .scqp-seg-btn { border-left: 1.5px solid var(--line); }
-      .scqp-seg-btn.scqp-active {
-        background: var(--saffron); color: #fff;
-      }
-      /* Quiz checklist box */
-      #scqp-quiz-list {
-        border: 1.5px solid var(--line);
-        border-radius: var(--radius-md);
-        overflow: hidden;
-        margin-bottom: 0.5rem;
-      }
-      .scqp-topbar {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 0.38rem 0.8rem;
-        background: var(--paper-raised);
-        border-bottom: 1px solid var(--line);
-        font-size: 0.78rem; color: var(--slate);
-      }
-      .scqp-topbar-toggle {
-        background: none; border: none; cursor: pointer;
-        font-size: 0.78rem; color: var(--saffron);
-        font-family: var(--font-body); padding: 0;
-        font-weight: 600;
-      }
-      .scqp-scroll { max-height: 170px; overflow-y: auto; }
-      .scqp-quiz-row {
-        display: flex; align-items: center; gap: 0.6rem;
-        padding: 0.5rem 0.8rem;
-        border-bottom: 1px solid var(--line);
-        cursor: pointer; transition: background .1s;
-        user-select: none;
-        position: relative; z-index: 1;
-        pointer-events: auto;
-      }
-      .scqp-quiz-row:last-child { border-bottom: none; }
-      .scqp-quiz-row:hover { background: var(--saffron-soft, rgba(232,147,46,.08)); }
-      .scqp-quiz-row input[type=checkbox] {
-        width: 15px; height: 15px;
-        accent-color: var(--saffron);
-        flex-shrink: 0; cursor: pointer;
-        margin: 0;
-        pointer-events: auto;
-        position: relative; z-index: 2;
-      }
-      .scqp-quiz-name {
-        flex: 1; font-size: 0.85rem; color: var(--ink);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .scqp-quiz-qs {
-        font-size: 0.76rem; color: var(--slate); flex-shrink: 0;
-      }
-    `;
-    document.head.appendChild(s);
-  }
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 1rem;
+  flex: 1;
+}
 
-  // ── Update folder name & count ───────────────────────────────
-  const qCount  = quizzesCache.length;
-  const totalQs = quizzesCache.reduce((sum, q) => sum + (Array.isArray(q.questions) ? q.questions.length : 0), 0);
-  const nameEl  = document.getElementById('share-chapter-name');
-  const countEl = document.getElementById('share-chapter-count');
-  if (nameEl)  nameEl.textContent  = folder.name;
-  if (countEl) countEl.textContent = `${qCount} quizzes · ${totalQs} questions`;
-
-  // Link tab
-  const linkInput = document.getElementById('share-chapter-link-input');
-  if (linkInput) linkInput.value = location.origin + '?chapter=' + folder.id;
-
-  // ── Inject picker BEFORE .share-tabs ────────────────────────
-  // Always remove old so quizzes refresh each open
-  document.getElementById('scqp-wrap')?.remove();
-  const shareTabs = document.querySelector('#modal-share-chapter .share-tabs');
-  if (!shareTabs) return; // safety
-
-  const wrap = document.createElement('div');
-  wrap.id = 'scqp-wrap';
-  shareTabs.insertAdjacentElement('beforebegin', wrap);
-
-  // Build inner HTML
-  const quizRowsHtml = quizzesCache.length === 0
-    ? `<p style="font-size:.82rem;color:var(--slate);padding:.6rem .8rem">No quizzes in this folder.</p>`
-    : quizzesCache.map(q => {
-        const n = Array.isArray(q.questions) ? q.questions.length : 0;
-        return `<label class="scqp-quiz-row">
-         <input type="checkbox" class="scqp-quiz-cb"
-  data-quiz-id="${q.id}"
-  data-quiz-title="${escHtml(q.title)}">
-          <span class="scqp-quiz-name">${escHtml(q.title)}</span>
-          <span class="scqp-quiz-qs">${n} Qs</span>
-        </label>`;
-      }).join('');
-
-  wrap.innerHTML = `
-    <p class="scqp-section-label">What to share</p>
-    <div class="scqp-seg">
-      <button class="scqp-seg-btn scqp-active" id="scqp-btn-all">📁 Entire Folder</button>
-      <button class="scqp-seg-btn" id="scqp-btn-pick">☑️ Pick Quizzes</button>
-    </div>
-    <div id="scqp-quiz-list" style="display:none">
-      <div class="scqp-topbar">
-        <span>${quizzesCache.length} quiz${quizzesCache.length !== 1 ? 'zes' : ''}</span>
-        <button class="scqp-topbar-toggle" id="scqp-toggle-all">Deselect all</button>
-      </div>
-      <div class="scqp-scroll">${quizRowsHtml}</div>
-    </div>
-  `;
-
-  // Segment button events
-  document.getElementById('scqp-btn-all').addEventListener('click', () => {
-    document.getElementById('scqp-btn-all').classList.add('scqp-active');
-    document.getElementById('scqp-btn-pick').classList.remove('scqp-active');
-    document.getElementById('scqp-quiz-list').style.display = 'none';
-  });
-  document.getElementById('scqp-btn-pick').addEventListener('click', () => {
-    document.getElementById('scqp-btn-pick').classList.add('scqp-active');
-    document.getElementById('scqp-btn-all').classList.remove('scqp-active');
-    document.getElementById('scqp-quiz-list').style.display = 'block';
-  });
-
-  // Select / Deselect all
-  let allChecked = false;
-  document.getElementById('scqp-toggle-all').textContent = 'Select all';
-  document.getElementById('scqp-toggle-all').addEventListener('click', () => {
-    allChecked = !allChecked;
-    wrap.querySelectorAll('.scqp-quiz-cb').forEach(cb => cb.checked = allChecked);
-    document.getElementById('scqp-toggle-all').textContent = allChecked ? 'Deselect all' : 'Select all';
-  });
-
-  // ── Friends list ─────────────────────────────────────────────
-  const list    = document.getElementById('share-chapter-friend-list');
-  const empty   = document.getElementById('share-chapter-friend-empty');
-  const sendBtn = document.getElementById('btn-send-chapter');
-  if (list) {
-    list.innerHTML = '';
-    if (!friendsCache.length) {
-      if (empty)   empty.style.display  = 'block';
-      if (sendBtn) sendBtn.style.display = 'none';
-    } else {
-      if (empty)   empty.style.display  = 'none';
-      if (sendBtn) sendBtn.style.display = '';
-      friendsCache.forEach(friend => {
-        const initials = (friend.display_name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
-        const label = document.createElement('label');
-        label.className = 'friend-pick-item';
-        label.innerHTML = `
-          <input type="checkbox" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">
-          <div class="friend-avatar friend-avatar--sm">${escHtml(initials)}</div>
-          <span>${escHtml(friend.display_name)}</span>
-        `;
-        list.appendChild(label);
-      });
-    }
-  }
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
-document.getElementById('btn-add-subfolder')?.addEventListener('click', async () => {
-  const name = prompt('Subfolder name:');
-  if (!name || !name.trim()) return;
-  const { data, error } = await sb.from('folders').insert({
-    user_id: currentUser.id,
-    name: name.trim(),
-    parent_id: activeFolderId
-  }).select().single();
-  if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
-  foldersCache.unshift(data);
-  renderSubfolders(activeFolderId);
-  toast('Subfolder created!', 'success');
-});
-
-// Override oldstatic: pre-select current subfolder in create view
-document.getElementById('btn-add-quiz-here')?.addEventListener('click', e => {
-  e.stopImmediatePropagation();
-  showView('create');
-  updateTargetFolderSelect();
-}, true);
-
-document.getElementById('btn-share-chapter')?.addEventListener('click', () => {
-  setupShareChapterModal();
-  openModal('modal-share-chapter');
-});
-
-document.getElementById('btn-copy-chapter-link')?.addEventListener('click', async () => {
-  const input = document.getElementById('share-chapter-link-input');
-  if (!input) return;
-
-  const folder = foldersCache.find(f => f.id === activeFolderId);
-  if (folder && !folder.is_public) {
-    const descIds = getDescendantFolderIds(folder.id);
-    const allFolderIds = [folder.id, ...descIds];
-    await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
-    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
-    await sb.from('quizzes').update({ is_public: true }).in('folder_id', allFolderIds);
-    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
-    toast('Chapter made public so others can open this link', 'info');
-  }
+.stat-num {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
 
-  try {
-    await navigator.clipboard.writeText(input.value);
-  } catch (e) {}
-
-  const btn = document.getElementById('btn-copy-chapter-link');
-  btn.textContent = '✓ Copied!';
-  setTimeout(() => btn.textContent = 'Copy', 2000);
-});
-
-document.getElementById('btn-send-chapter')?.addEventListener('click', async () => {
-  const folder = foldersCache.find(f => f.id === activeFolderId);
-  if (!folder) return;
-
-  const checked = Array.from(document.querySelectorAll('#share-chapter-friend-list input[type="checkbox"]:checked'));
-  if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
-
-  const sendBtn = document.getElementById('btn-send-chapter');
-  setLoading(sendBtn, true, 'Sharing…');
-
-  // ── Determine mode from segment control ──────────────────────
-const entireFolder =
-  !document.getElementById('scqp-btn-pick')?.classList.contains('scqp-active');
-  if (entireFolder) {
-    // ── Share full folder (existing behaviour) ───────────────────
-    const descIds    = getDescendantFolderIds(folder.id);
-    const allFolderIds = [folder.id, ...descIds];
-    const { error: fErr } = await sb.from('folders').update({ is_public: true }).in('id', allFolderIds);
-    if (fErr) { toast('Could not make folder public: ' + fErr.message, 'error'); setLoading(sendBtn, false); return; }
-    foldersCache.forEach(f => { if (allFolderIds.includes(f.id)) f.is_public = true; });
-    await sb.from('quizzes').update({ is_public: true }).in('folder_id', allFolderIds);
-    quizzesCache.forEach(q => { if (allFolderIds.includes(q.folder_id)) q.is_public = true; });
-
-    for (const cb of checked) {
-      await sb.from('inbox_messages').insert({
-        to_user_id: cb.dataset.friendId,
-        from_user_id: currentUser?.id,
-        type: 'chapter',
-        title: `${currentProfile?.display_name || 'Someone'} shared "${folder.name}" with you`,
-        body: { folder_id: folder.id }
-      });
-    }
-    setLoading(sendBtn, false);
-    toast('Folder shared!', 'success');
-
-  } else {
-    // ── Share only selected individual quizzes ────────────────────
-    const selectedCbs = Array.from(document.querySelectorAll('#scqp-quiz-list .scqp-quiz-cb:checked'));
-    if (!selectedCbs.length) { toast('Select at least one quiz to share.', 'info'); setLoading(sendBtn, false); return; }
-
-    // Make each selected quiz public
-    const quizIds = selectedCbs.map(cb => cb.dataset.quizId);
-    await sb.from('quizzes').update({ is_public: true }).in('id', quizIds);
-    quizzesCache.forEach(q => { if (quizIds.includes(q.id)) q.is_public = true; });
-
-    // Send one inbox message per quiz per friend
-    for (const cb of checked) {
-      for (const qcb of selectedCbs) {
-        await sb.from('inbox_messages').insert({
-          to_user_id: cb.dataset.friendId,
-          from_user_id: currentUser?.id,
-          type: 'quiz',
-          title: `${currentProfile?.display_name || 'Someone'} shared "${qcb.dataset.quizTitle}" with you`,
-          body: { quiz_id: qcb.dataset.quizId }
-        });
-      }
-    }
-    setLoading(sendBtn, false);
-    const qWord = selectedCbs.length === 1 ? 'quiz' : 'quizzes';
-    toast(`${selectedCbs.length} ${qWord} shared!`, 'success');
-  }
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
-  closeModal('modal-share-chapter');
-});
-
-
-// Share modal: time limit seg-control
-document.querySelectorAll('[data-share-timer-mode]').forEach(btn =>
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-share-timer-mode]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const mode = btn.dataset.shareTimerMode;
-    document.querySelectorAll('[data-share-timer-pane]').forEach(p => p.hidden = true);
-    document.querySelectorAll('[data-share-timer-help]').forEach(p => p.hidden = true);
-    if (mode === 'none') document.querySelector('[data-share-timer-help="none"]').hidden = false;
-    else document.querySelector('[data-share-timer-pane="' + mode + '"]').hidden = false;
-  }));
-
-function getShareSelectedQuestions(quiz) {
-  const all = Array.isArray(quiz.questions) ? quiz.questions : [];
-  const mode = document.querySelector('#share-select-mode [data-share-select-mode].active')?.dataset.shareSelectMode || 'all';
-  if (mode === 'range') {
-    const from = parseInt(document.getElementById('share-range-from').value, 10) || 1;
-    const to   = parseInt(document.getElementById('share-range-to').value, 10) || all.length;
-    return all.slice(from - 1, to);
-  }
-  if (mode === 'random') {
-    const count = Math.min(parseInt(document.getElementById('share-random-count').value, 10) || all.length, all.length);
-    const shuffled = [...all].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, count);
-  }
-  return all;
-}
-
-let allQuizzesCache = null;
-async function loadAllQuizzesForUser() {
-  if (allQuizzesCache) return allQuizzesCache;
-  const { data, error } = await sb.from('quizzes')
-    .select('id, title, questions, folder_id')
-    .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: false });
-  if (error) { console.warn('loadAllQuizzesForUser error:', error.message); return []; }
-  allQuizzesCache = data || [];
-  return allQuizzesCache;
-}
-
-async function setupShareModal(quiz) {
-  // Via Link tab
-  const linkInput = document.getElementById('share-link-input');
-  if (linkInput) linkInput.value = location.origin + '?quiz=' + currentShareQuizId;
-
-  // To Friends tab
-  const list  = document.getElementById('share-friend-pick-list');
-  const empty = document.getElementById('share-friend-empty');
-  const sendBtn = document.getElementById('btn-send-shared-quiz');
-  if (list) {
-    list.innerHTML = '';
-    if (!friendsCache.length) {
-      if (empty) empty.style.display = 'block';
-      if (sendBtn) sendBtn.style.display = 'none';
-    } else {
-      if (empty) empty.style.display = 'none';
-      if (sendBtn) sendBtn.style.display = '';
-      friendsCache.forEach(friend => {
-        const initials = (friend.display_name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
-        const label = document.createElement('label');
-        label.className = 'friend-pick-item';
-        label.innerHTML = `
-          <input type="checkbox" data-friend-id="${friend.id}" data-friend-name="${escHtml(friend.display_name)}">
-          <div class="friend-avatar friend-avatar--sm">${escHtml(initials)}</div>
-          <span>${escHtml(friend.display_name)}</span>
-        `;
-        list.appendChild(label);
-      });
-    }
-  }
+.stat-item--correct .stat-num { color: var(--success); }
+.stat-item--incorrect .stat-num { color: var(--error); }
+.stat-item--skipped .stat-num { color: var(--slate); }
+.stat-item--rank .stat-num { color: var(--saffron); }
+
+.result-review h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
 }
 
-document.getElementById('btn-copy-link')?.addEventListener('click', async () => {
-  const input = document.getElementById('share-link-input');
-  if (!input) return;
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
 
-  const quiz = quizzesCache.find(q => q.id === currentShareQuizId);
-  if (quiz && !quiz.is_public) {
-    await sb.from('quizzes').update({ is_public: true }).eq('id', quiz.id);
-    quiz.is_public = true;
-    toast('Quiz made public so others can open this link', 'info');
-  }
+.review-item {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+}
 
-  try {
-    await navigator.clipboard.writeText(input.value);
-  } catch (e) {}
-
-  const btn = document.getElementById('btn-copy-link');
-  const original = btn.textContent;
-  btn.textContent = 'Copied!';
-  setTimeout(() => btn.textContent = original, 2000);
-});
-
-document.getElementById('btn-send-shared-quiz')?.addEventListener('click', async () => {
-  const quiz = quizzesCache.find(q => q.id === currentShareQuizId);
-  if (!quiz) return;
-
-  const checked = Array.from(document.querySelectorAll('#share-friend-pick-list input[type="checkbox"]:checked'));
-  if (!checked.length) { toast('Select at least one friend.', 'info'); return; }
-
-  const asChallenge = document.getElementById('share-as-challenge-friend')?.checked;
-  const selectedQuestions = getShareSelectedQuestions(quiz);
-  const sameAsFull = selectedQuestions.length === (quiz.questions || []).length;
-  console.log('Share selection:', { mode: document.querySelector('#share-select-mode [data-share-select-mode].active')?.dataset.shareSelectMode, selectedCount: selectedQuestions.length, fullCount: (quiz.questions||[]).length, sameAsFull });
-
-  let quizIdToSend = quiz.id;
-  let quizTitleToSend = quiz.title;
-
-  // If a subset was chosen, create a new quiz with that subset and share that instead
-  if (!sameAsFull) {
-    const { data: newQuiz, error } = await sb.from('quizzes').insert({
-      user_id: currentUser.id,
-      title: quiz.title + ' (shared subset)',
-      questions: selectedQuestions,
-      is_public: false
-    }).select().single();
-    if (error) {
-      toast('Could not create subset quiz: ' + error.message, 'error');
-      console.error('Subset quiz insert error:', error);
-    }
-    if (!error && newQuiz) {
-      quizIdToSend = newQuiz.id;
-      quizTitleToSend = newQuiz.title;
-      quizzesCache.unshift(newQuiz);
-    }
-  }
+.review-item--correct { border-left-color: var(--success); }
+.review-item--incorrect { border-left-color: var(--error); }
+.review-item--skipped { border-left-color: var(--slate); }
 
-  // Time limit chosen for everyone in this session
-  const shareTimerMode = document.querySelector('#share-timer-mode [data-share-timer-mode].active')?.dataset.shareTimerMode || 'none';
-  const timeLimitSeconds = shareTimerMode === 'total'
-    ? (parseInt(document.getElementById('share-timer-minutes').value, 10) || 0) * 60
-      + (parseInt(document.getElementById('share-timer-seconds').value, 10) || 0)
-    : 0;
-
-  // Create a shared quiz session so everyone gets the exact same questions + time,
-  // and can later see each other on a shared leaderboard.
-  const memberIds = checked.map(cb => cb.dataset.friendId);
-  let sessionId = null;
-  {
-    const { data: session, error: sessErr } = await sb.from('quiz_sessions').insert({
-      host_id: currentUser.id,
-      host_name: currentProfile?.display_name || 'Someone',
-      quiz_id: quizIdToSend,
-      title: quizTitleToSend,
-      questions: selectedQuestions.length ? selectedQuestions : (quiz.questions || []),
-      time_limit_seconds: timeLimitSeconds,
-      member_ids: [currentUser.id, ...memberIds]
-    }).select().single();
-    if (sessErr) {
-      console.warn('quiz_sessions insert error:', sessErr.message);
-    } else if (session) {
-      sessionId = session.id;
-    }
-  }
+.review-q {
+  display: flex;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
 
-  for (const cb of checked) {
-    const toUserId = cb.dataset.friendId;
-    const toName   = cb.dataset.friendName;
-    if (asChallenge) {
-      await sendChallenge(toUserId, toName, quizIdToSend, quizTitleToSend, sessionId, timeLimitSeconds);
-    } else {
-      await sendSharedQuiz(toUserId, toName, quizIdToSend, quizTitleToSend, sessionId, timeLimitSeconds);
-    }
-  }
+.review-num { color: var(--slate); font-family: var(--font-mono); }
 
-  toast('Quiz shared!', 'success');
-  closeModal('modal-share');
-
-  // Switch the host to the exact same session (questions + time limit) so
-  // they can start whenever they're ready, with identical settings, and
-  // appear on the same shared leaderboard.
-  activeQuizSessionId = sessionId;
-  if (!sameAsFull) {
-    activeQuizId        = quizIdToSend;
-    activeQuizTitle     = quizTitleToSend;
-    activeQuizQuestions = selectedQuestions;
-    activeFullQuizQuestions = [];
-    document.getElementById('setup-quiz-title').textContent = quizTitleToSend;
-    document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
-  }
-  applySessionTimer(timeLimitSeconds);
-  const rFrom = document.getElementById('range-from');
-  const rTo   = document.getElementById('range-to');
-  if (rFrom && rTo) {
-    rFrom.value = 1;
-    rTo.value = activeQuizQuestions.length;
-    rFrom.dispatchEvent(new Event('change'));
-  }
-  openQuizSetup(null, true);
-});
-
-// Apply a session's time limit to the Quiz Setup timer controls
-function applySessionTimer(timeLimitSeconds) {
-  const mode = timeLimitSeconds > 0 ? 'total' : 'none';
-  const btn = document.querySelector('[data-timer-mode="' + mode + '"]');
-  if (btn) btn.click();
-  if (timeLimitSeconds > 0) {
-    const mins = Math.floor(timeLimitSeconds / 60);
-    const secs = timeLimitSeconds % 60;
-    const tm = document.getElementById('timer-minutes');
-    const ts = document.getElementById('timer-seconds');
-    if (tm) tm.value = mins;
-    if (ts) ts.value = secs;
-  }
+.review-tag {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  display: inline-block;
 }
 
+.review-tag--correct { background: var(--success-soft); color: var(--success); }
+.review-tag--incorrect { background: var(--error-soft); color: var(--error); }
 
-async function sendSharedQuiz(toUserId, toUserName, quizId, quizTitle, sessionId, timeLimitSeconds) {
-  await sb.from('inbox_messages').insert({
-    to_user_id: toUserId,
-    from_user_id: currentUser?.id,
-    type: 'quiz',
-    title: `${currentProfile?.display_name || 'Someone'} shared "${quizTitle}" with you`,
-    body: { quiz_id: quizId, session_id: sessionId || null, time_limit_seconds: timeLimitSeconds || 0 }
-  });
-  toast(`Quiz sent to ${toUserName}!`, 'success');
-}
-
-// ── PINS ─────────────────────────────────────────────────────
-async function loadPins() {
-  if (!currentUser) return;
-  const { data } = await sb.from('pins').select('*').eq('user_id', currentUser.id);
-  if (!data) return;
-  data.forEach(p => {
-    pinnedItems.set(`${p.item_type}-${p.item_id}`, {
-      type: p.item_type, id: p.item_id,
-      name: p.item_name, meta: p.item_meta
-    });
-  });
-  syncPinnedStrip();
-}
-
-async function savePinToDb(type, id, name, meta) {
-  if (!currentUser) return;
-  await sb.from('pins').upsert({
-    user_id: currentUser.id,
-    item_type: type, item_id: id,
-    item_name: name, item_meta: meta
-  }, { onConflict: 'user_id,item_type,item_id' });
-}
-
-async function removePinFromDb(type, id) {
-  if (!currentUser) return;
-  await sb.from('pins').delete()
-    .eq('user_id', currentUser.id)
-    .eq('item_type', type)
-    .eq('item_id', id);
-}
-
-// ── FLASHCARDS (from real questions) ─────────────────────────
-let flashFilter = 'all'; // 'all' or 'bookmarked'
-
-async function renderFlashcards(questions, setName) {
-  const grid = document.getElementById('flash-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-
-  flashFilter = 'all';
-  document.querySelectorAll('#flash-filter-bar [data-flash-filter]').forEach(b =>
-    b.classList.toggle('active', b.dataset.flashFilter === 'all'));
-
-  const nameEl = document.getElementById('flash-set-name');
-  if (nameEl) nameEl.textContent = setName || '';
-
-  if (!questions.length) {
-    grid.innerHTML = '<p class="hint" style="padding:1rem">No questions found in this quiz.</p>';
-    const countEl = document.getElementById('flash-total-count');
-    if (countEl) countEl.textContent = 0;
-    return;
-  }
+.review-explanation {
+  font-size: 0.85rem;
+  color: var(--slate);
+  margin-top: 0.5rem;
+  line-height: 1.5;
+}
 
-  await refreshBookmarksIndex();
-
-  questions.forEach((q, i) => {
-    const correctOpt = q.options?.[q.correctIndex] || 'N/A';
-    const isBookmarked = activeQuizId ? bookmarksIndexCache.has(`${activeQuizId}:${i}`) : false;
-    const card = document.createElement('div');
-    card.className = 'flash-card';
-    card.dataset.flashIdx = i;
-    card.dataset.bookmarked = isBookmarked ? '1' : '0';
-    if (isBookmarked) card.classList.add('flash-card--bookmarked');
-
-    // Build options list for front face
-    const optionsList = Array.isArray(q.options) ? q.options.map((opt, idx) => {
-      const marker = String.fromCharCode(65 + idx); // A, B, C, D
-      const isCorrect = idx === q.correctIndex;
-      return `<li class="${isCorrect ? 'correct-opt' : ''}">`
-        + `<span class="option-marker">${marker}</span>${escHtml(opt)}</li>`;
-    }).join('') : '';
-
-    card.innerHTML = `
-      <div class="flash-card-inner">
-        <div class="flash-card-face flash-card-front">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-            <div class="flash-actions">
-              <button class="icon-btn" title="Edit question">✏️</button>
-              <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
-            </div>
-          </div>
-          <p class="flash-question">${escHtml(q.question || '')}</p>
-          ${optionsList ? `<ul class="flash-card-options">${optionsList}</ul>` : ''}
-          <p class="flash-hint">Click to reveal answer</p>
-        </div>
-        <div class="flash-card-face flash-card-back">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-            <div class="flash-actions">
-              <button class="icon-btn" title="Edit question">✏️</button>
-              <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
-            </div>
-          </div>
-          <p class="flash-answer-line">✓ ${escHtml(correctOpt)}</p>
-          ${q.explanation ? `<p class="flash-explanation-line">${escHtml(q.explanation)}</p>` : ''}
-        </div>
-      </div>
-    `;
-
-    // Flip on card click (not on button click)
-    card.addEventListener('click', e => {
-      if (e.target.closest('.icon-btn')) return;
-      card.classList.toggle('flipped');
-    });
-
-    // Edit buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Edit question"]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        openFlashcardEditor(i, card);
-      });
-    });
-
-    // Search buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Search online"]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        window.open('https://www.google.com/search?q=' + encodeURIComponent(q.question || ''), '_blank');
-      });
-    });
-
-    // Bookmark buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const result = await bookmarkQuestion(q);
-        if (result === null) return; // error — no UI change
-        card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(b => b.classList.toggle('bookmarked', result));
-        card.classList.toggle('flash-card--bookmarked', result);
-        card.dataset.bookmarked = result ? '1' : '0';
-        if (activeQuizId) {
-          const key = `${activeQuizId}:${i}`;
-          if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
-        }
-        applyFlashFilter();
-      });
-    });
-
-    grid.appendChild(card);
-  });
-
-  applyFlashFilter();
-}
-
-// ── FLASHCARD EDITOR ─────────────────────────────────────────
-function openFlashcardEditor(questionIndex, cardEl) {
-  const q = activeQuizQuestions[questionIndex];
-  if (!q) return;
-
-  document.getElementById('modal-flashcard-edit')?.remove();
-  const m = document.createElement('div');
-  m.className = 'modal active';
-  m.id = 'modal-flashcard-edit';
-
-  const numOptions = Array.isArray(q.options) ? q.options.length : 4;
-  const optionsHTML = Array.from({ length: numOptions }, (_, i) => `
-    <div class="fce-option-row">
-      <label class="fce-option-label">
-        <input type="radio" name="fce-correct" value="${i}" ${q.correctIndex === i ? 'checked' : ''}>
-        <span class="fce-option-letter">${String.fromCharCode(65 + i)}</span>
-      </label>
-      <input type="text" class="input fce-option-input" data-opt-idx="${i}"
-        value="${escHtml(q.options?.[i] || '')}" placeholder="Option ${String.fromCharCode(65 + i)}">
-      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option" ${numOptions <= 2 ? 'disabled' : ''}>✕</button>
-    </div>`).join('');
-
-  m.innerHTML = `
-    <div class="modal-card" style="max-width:520px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-        <h3 style="margin:0">✏️ Edit Question ${questionIndex + 1}</h3>
-        <button class="btn btn--ghost btn--small" onclick="document.getElementById('modal-flashcard-edit')?.remove()">✕</button>
-      </div>
-
-      <label class="label">Question</label>
-      <textarea id="fce-question" class="input" rows="3"
-        style="width:100%;resize:vertical;margin-bottom:1rem">${escHtml(q.question || '')}</textarea>
-
-      <label class="label">Options <small style="color:var(--slate)">(● = correct answer)</small></label>
-      <div id="fce-options-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">
-        ${optionsHTML}
-      </div>
-
-      <button class="btn btn--ghost btn--small" id="fce-add-opt" style="margin-bottom:1rem">＋ Add Option</button>
-
-      <label class="label">Explanation <small style="color:var(--slate)">(optional)</small></label>
-      <textarea id="fce-explanation" class="input" rows="2"
-        style="width:100%;resize:vertical;margin-bottom:1.25rem">${escHtml(q.explanation || '')}</textarea>
-
-      <div class="fce-danger-zone">
-        <button class="btn btn--ghost btn--small fce-delete-btn" id="fce-delete-q">🗑 Delete this question</button>
-      </div>
-
-      <div class="modal-actions" style="margin-top:1rem">
-        <button class="btn btn--ghost" onclick="document.getElementById('modal-flashcard-edit')?.remove()">Cancel</button>
-        <button class="btn btn--primary" id="fce-save-btn">Save Changes</button>
-      </div>
-    </div>`;
-  document.body.appendChild(m);
-
-  // ── Add option ──
-  document.getElementById('fce-add-opt').addEventListener('click', () => {
-    const list = document.getElementById('fce-options-list');
-    const count = list.querySelectorAll('.fce-option-row').length;
-    if (count >= 6) { toast('Max 6 options allowed', 'info'); return; }
-    const idx = count;
-    const row = document.createElement('div');
-    row.className = 'fce-option-row';
-    row.innerHTML = `
-      <label class="fce-option-label">
-        <input type="radio" name="fce-correct" value="${idx}">
-        <span class="fce-option-letter">${String.fromCharCode(65 + idx)}</span>
-      </label>
-      <input type="text" class="input fce-option-input" data-opt-idx="${idx}" placeholder="Option ${String.fromCharCode(65 + idx)}">
-      <button class="icon-btn icon-btn--danger fce-remove-opt" title="Remove option">✕</button>`;
-    list.appendChild(row);
-    _bindFceRemoveButtons();
-    row.querySelector('input[type=text]').focus();
-  });
-
-  _bindFceRemoveButtons();
-
-  // ── Delete question ──
-  document.getElementById('fce-delete-q').addEventListener('click', async () => {
-    if (!confirm(`Delete question ${questionIndex + 1}? This cannot be undone.`)) return;
-    const btn = document.getElementById('fce-delete-q');
-    btn.textContent = '⏳ Deleting…'; btn.disabled = true;
-    activeQuizQuestions.splice(questionIndex, 1);
-    const ok = await _saveQuizQuestions();
-    if (ok) {
-      m.remove();
-      renderFlashcards(activeQuizQuestions, activeQuizTitle);
-      toast('Question deleted.', 'success');
-    } else {
-      activeQuizQuestions.splice(questionIndex, 0, q); // revert
-      btn.textContent = '🗑 Delete this question'; btn.disabled = false;
-    }
-  });
-
-  // ── Save ──
-  document.getElementById('fce-save-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('fce-save-btn');
-    const questionText = document.getElementById('fce-question').value.trim();
-    if (!questionText) { toast('Question cannot be empty', 'error'); return; }
-
-    const optionInputs = [...document.querySelectorAll('#fce-options-list .fce-option-input')];
-    const options = optionInputs.map(inp => inp.value.trim());
-    if (options.some(o => !o)) { toast('All options must have text', 'error'); return; }
-    if (options.length < 2)   { toast('At least 2 options required', 'error'); return; }
-
-    const correctRadio = document.querySelector('input[name="fce-correct"]:checked');
-    const correctIndex = correctRadio ? parseInt(correctRadio.value) : 0;
-    const explanation  = document.getElementById('fce-explanation').value.trim();
-
-    btn.textContent = '⏳ Saving…'; btn.disabled = true;
-
-    // Update in memory
-    activeQuizQuestions[questionIndex] = { ...q, question: questionText, options, correctIndex, explanation };
-
-    const ok = await _saveQuizQuestions();
-    if (ok) {
-      m.remove();
-      renderFlashcards(activeQuizQuestions, activeQuizTitle);
-      toast('Question updated!', 'success');
-    } else {
-      activeQuizQuestions[questionIndex] = q; // revert
-      btn.textContent = 'Save Changes'; btn.disabled = false;
-    }
-  });
-}
-
-function _bindFceRemoveButtons() {
-  document.querySelectorAll('.fce-remove-opt').forEach(btn => {
-    btn.onclick = () => {
-      const list = document.getElementById('fce-options-list');
-      const rows = list.querySelectorAll('.fce-option-row');
-      if (rows.length <= 2) { toast('At least 2 options required', 'info'); return; }
-      btn.closest('.fce-option-row').remove();
-      // Re-index letters
-      list.querySelectorAll('.fce-option-row').forEach((row, i) => {
-        row.querySelector('.fce-option-letter').textContent = String.fromCharCode(65 + i);
-        row.querySelector('input[type=radio]').value = i;
-        row.querySelector('input[type=text]').dataset.optIdx = i;
-        row.querySelector('input[type=text]').placeholder = `Option ${String.fromCharCode(65 + i)}`;
-        const removeBtn = row.querySelector('.fce-remove-opt');
-        if (removeBtn) removeBtn.disabled = list.querySelectorAll('.fce-option-row').length <= 2;
-      });
-    };
-  });
-}
-
-// Save activeQuizQuestions to Supabase
-async function _saveQuizQuestions() {
-  if (!activeQuizId || !currentUser) { toast('Cannot save — no quiz selected', 'error'); return false; }
-  const { error } = await sb.from('quizzes')
-    .update({ questions: activeQuizQuestions })
-    .eq('id', activeQuizId)
-    .eq('user_id', currentUser.id);
-  if (error) { toast('Save failed: ' + error.message, 'error'); return false; }
-  // Update local cache
-  const cached = quizzesCache.find(q => q.id === activeQuizId);
-  if (cached) cached.questions = [...activeQuizQuestions];
-  return true;
-}
-function applyFlashFilter() {
-  const grid = document.getElementById('flash-grid');
-  if (!grid) return;
-  grid.querySelectorAll('.flash-card').forEach(card => {
-    const show = flashFilter === 'all' || card.dataset.bookmarked === '1';
-    card.classList.toggle('flash-card--hidden', !show);
-  });
-  updateFlashCount();
-}
-
-function updateFlashCount() {
-  const countEl = document.getElementById('flash-total-count');
-  if (!countEl) return;
-  const grid = document.getElementById('flash-grid');
-  const visible = grid ? grid.querySelectorAll('.flash-card:not(.flash-card--hidden)').length : 0;
-  countEl.textContent = visible;
-}
-
-// Flashcards filter chips: All / Bookmarked
-document.getElementById('flash-filter-bar')?.addEventListener('click', e => {
-  const btn = e.target.closest('[data-flash-filter]');
-  if (!btn) return;
-  flashFilter = btn.dataset.flashFilter;
-  document.querySelectorAll('#flash-filter-bar [data-flash-filter]').forEach(b =>
-    b.classList.toggle('active', b === btn));
-  applyFlashFilter();
-});
-
-// ── BACKUP ────────────────────────────────────────────────────
-async function exportBackup() {
-  if (!currentUser) return;
-  const [{ data: groups }, { data: folders }, { data: quizzes }, { data: attempts }, { data: notes }] = await Promise.all([
-    sb.from('groups').select('*').eq('user_id', currentUser.id).order('sort_order', { ascending: true }),
-    sb.from('folders').select('*').eq('user_id', currentUser.id),
-    sb.from('quizzes').select('*').eq('user_id', currentUser.id),
-    sb.from('quiz_attempts').select('*').eq('user_id', currentUser.id),
-    sb.from('notes').select('*').eq('user_id', currentUser.id)
-  ]);
-  const backup = {
-    groups,
-    folders,
-    quizzes,
-    attempts,
-    notes,
-    exportedAt: new Date().toISOString(),
-    version: 2
-  };
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-  const a = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(blob),
-    download: `quizmaster-backup-${new Date().toISOString().slice(0, 10)}.json`
-  });
-  a.click();
-  toast('Backup downloaded!', 'success');
-}
-
-async function importBackup(raw) {
-  // Progress bar helpers
-  const progWrap   = document.getElementById('restore-progress');
-  const progLabel  = document.getElementById('restore-progress-label');
-  const progPct    = document.getElementById('restore-progress-pct');
-  const progBar    = document.getElementById('restore-progress-bar');
-  const progDetail = document.getElementById('restore-progress-detail');
-  const setProgress = (pct, label, detail = '') => {
-    if (progWrap)   progWrap.style.display = 'block';
-    if (progBar)    progBar.style.width = pct + '%';
-    if (progPct)    progPct.textContent  = pct + '%';
-    if (progLabel)  progLabel.textContent = label;
-    if (progDetail) progDetail.textContent = detail;
-  };
-  const hideProgress = () => { if (progWrap) progWrap.style.display = 'none'; };
-
-  try {
-    const backup = JSON.parse(raw);
-    if (!backup.quizzes) throw new Error('Invalid backup format — quizzes missing.');
-
-    const groups  = backup.groups  || [];
-    const folders = backup.folders || [];
-    const quizzes = backup.quizzes || [];
-    const total   = groups.length + folders.length + quizzes.length || 1;
-    let done = 0;
-    const tick = (label, detail) => {
-      done++;
-      setProgress(Math.round((done / total) * 100), label, detail);
-    };
-
-    // ── Step 1: Groups ───────────────────────────────────────────
-    const groupIdMap = {};
-    setProgress(0, 'Creating groups…');
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i];
-      const { data: ng } = await sb.from('groups').insert({
-        user_id:    currentUser.id,
-        name:       g.name,
-        sort_order: i
-      }).select().single();
-      if (ng) groupIdMap[g.id] = ng.id;
-      tick('Creating groups…', g.name);
-    }
-
-    // ── Step 2: Root folders ─────────────────────────────────────
-    const folderIdMap = {};
-    const rootFolders = folders.filter(f => !f.parent_id);
-    setProgress(Math.round((done / total) * 100), 'Creating folders…');
-    for (const f of rootFolders) {
-      const newGroupId = f.group_id ? groupIdMap[f.group_id] : null;
-      const { data: nf } = await sb.from('folders').insert({
-        user_id:   currentUser.id,
-        name:      f.name,
-        group_id:  newGroupId || null,
-        is_pinned: f.is_pinned || false,
-        is_public: false,
-        parent_id: null
-      }).select().single();
-      if (nf) folderIdMap[f.id] = nf.id;
-      tick('Creating folders…', f.name);
-    }
-
-    // ── Step 3: Subfolders (up to 4 levels deep) ─────────────────
-    const subFolders = folders.filter(f => f.parent_id);
-    for (let depth = 0; depth < 4; depth++) {
-      for (const f of subFolders) {
-        if (folderIdMap[f.id]) continue;
-        const newParentId = folderIdMap[f.parent_id];
-        if (!newParentId) continue;
-        const { data: nf } = await sb.from('folders').insert({
-          user_id:   currentUser.id,
-          name:      f.name,
-          parent_id: newParentId,
-          is_pinned: f.is_pinned || false,
-          is_public: false
-        }).select().single();
-        if (nf) folderIdMap[f.id] = nf.id;
-        tick('Creating subfolders…', f.name);
-      }
-    }
-
-    // ── Step 4: Quizzes ──────────────────────────────────────────
-    let quizCount = 0;
-    for (const q of quizzes) {
-      const newFolderId = q.folder_id ? folderIdMap[q.folder_id] : null;
-      if (q.folder_id && !newFolderId) { tick('Importing quizzes…', q.title + ' (skipped)'); continue; }
-      const { error } = await sb.from('quizzes').insert({
-        user_id:   currentUser.id,
-        folder_id: newFolderId || null,
-        title:     q.title,
-        questions: q.questions,
-        is_pinned: q.is_pinned || false,
-        is_public: false
-      });
-      if (!error) quizCount++;
-      tick('Importing quizzes…', q.title);
-    }
-
-    setProgress(100, 'Done!');
-    const gCount = Object.keys(groupIdMap).length;
-    const fCount = Object.keys(folderIdMap).length;
-    toast(`Import done ✓  ${gCount} groups · ${fCount} folders · ${quizCount} quizzes added.`, 'success');
-    await loadFolders();
-    setTimeout(hideProgress, 3000);
-  } catch (err) {
-    hideProgress();
-    toast('Import failed: ' + err.message, 'error');
-  }
+.result-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
 }
 
-// ── PUBLIC LIBRARY (Supabase version) ─────────────────────────
-async function buildPublicLibrary() {
-  const grid  = document.getElementById('public-library-grid');
-  const empty = document.getElementById('public-library-empty');
-  if (!grid) return;
-  grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
-
-  const [{ data: pubFolders }, { data: pubQuizzes }] = await Promise.all([
-    sb.from('folders').select('id, name, user_id, parent_id').eq('user_id', currentUser?.id).eq('is_public', true).is('parent_id', null),
-    sb.from('quizzes').select('id, title, user_id, folder_id, questions').eq('user_id', currentUser?.id).eq('is_public', true)
-  ]);
-
-  const items = [
-    ...(pubFolders || []).map(f => ({ id: f.id, type: '📁 Folder', title: f.name, meta: '' })),
-    ...(pubQuizzes || []).map(q => {
-      const folderName = q.folder_id ? (foldersCache.find(f => f.id === q.folder_id)?.name || null) : null;
-      return { id: q.id, type: '📝 Quiz', title: q.title, meta: `${q.questions?.length || 0} Qs` + (folderName ? ` · 📁 ${folderName}` : '') };
-    })
-  ];
-
-  grid.innerHTML = '';
-  if (items.length === 0) { if (empty) empty.style.display = 'block'; return; }
-  if (empty) empty.style.display = 'none';
-
-  // Get like counts
-  const { data: likes } = await sb.from('likes').select('item_id').in('item_id', items.map(i => i.id));
-  const likeMap = {};
-  (likes || []).forEach(l => { likeMap[l.item_id] = (likeMap[l.item_id] || 0) + 1; });
-
-  items.forEach(item => {
-    const el = document.createElement('article');
-    el.className = 'public-lib-card';
-    const likeCount = likeMap[item.id] || 0;
-    const itemKind = item.type.includes('Folder') ? 'folder' : 'quiz';
-    el.innerHTML = `
-      <div class="public-lib-card-top">
-        <span class="public-lib-type">${item.type}</span>
-        <span class="visibility-badge visibility-badge--public">🌐 Public</span>
-      </div>
-      <h4>${escHtml(item.title)}</h4>
-      <span class="public-lib-owner">👤 You · ${item.meta}</span>
-      <div class="public-lib-actions">
-        <button class="btn-like" data-id="${item.id}">❤ <span class="like-count">${likeCount}</span></button>
-        <button class="btn btn--ghost btn--small btn-remove-from-public">🔒 Remove</button>
-      </div>
-    `;
-    grid.appendChild(el);
-
-    el.querySelector('.btn-remove-from-public').addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
-      if (!confirm('Make this private again? Friends who haven\'t already added it to their own library will lose access to this shared link.')) return;
-      setLoading(btn, true, 'Removing…');
-      const { error } = await sb.from(itemKind === 'folder' ? 'folders' : 'quizzes')
-        .update({ is_public: false }).eq('id', item.id);
-      if (error) { toast('Could not update: ' + error.message, 'error'); setLoading(btn, false); return; }
-
-      // Keep local caches in sync
-      if (itemKind === 'folder') {
-        const f = foldersCache.find(f => f.id === item.id);
-        if (f) f.is_public = false;
-      } else {
-        const q = quizzesCache.find(q => q.id === item.id);
-        if (q) q.is_public = false;
-      }
-
-      el.remove();
-      if (!grid.querySelector('.public-lib-card')) {
-        if (empty) empty.style.display = 'block';
-      }
-      toast('Removed from your Public Library.', 'success');
-    });
-
-    el.querySelector('.btn-like').addEventListener('click', async () => {
-      const btn = el.querySelector('.btn-like');
-      const liked = btn.classList.toggle('liked');
-      const countEl = btn.querySelector('.like-count');
-      if (liked) {
-        await sb.from('likes').insert({ user_id: currentUser.id, item_type: item.type.includes('Folder') ? 'folder' : 'quiz', item_id: item.id });
-        countEl.textContent = parseInt(countEl.textContent) + 1;
-      } else {
-        await sb.from('likes').delete().eq('user_id', currentUser.id).eq('item_id', item.id);
-        countEl.textContent = Math.max(0, parseInt(countEl.textContent) - 1);
-      }
-    });
-  });
-}
-
-// ── GLOBAL SEARCH (real users) ────────────────────────────────
-async function renderGlobalSearchResults(query) {
-  const q = query.trim();
-  const el = document.getElementById('global-search-results');
-  if (!el) return;
-
-  if (q.length < 2) {
-    el.innerHTML = '<div class="global-search-empty">Type at least 2 characters…</div>';
-    return;
-  }
+/* =========================================================
+   FLASHCARDS (grid view)
+   ========================================================= */
+.flash-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
 
-  el.innerHTML = '<div class="global-search-empty">Searching…</div>';
-
-  const [users, myFolders, myQuizzes, pubFolders, pubQuizzes] = await Promise.all([
-    searchUsers(q),
-    sb.from('folders').select('id,name').eq('user_id', currentUser?.id).ilike('name', `%${q}%`).limit(5),
-    sb.from('quizzes').select('id,title').eq('user_id', currentUser?.id).ilike('title', `%${q}%`).limit(5),
-    sb.from('folders').select('id,name,user_id').eq('is_public', true).neq('user_id', currentUser?.id).ilike('name', `%${q}%`).limit(5),
-    sb.from('quizzes').select('id,title,user_id').eq('is_public', true).neq('user_id', currentUser?.id).ilike('title', `%${q}%`).limit(5)
-  ]);
-
-  const allUsers = users || [];
-  const folders  = myFolders.data || [];
-  const quizzes  = myQuizzes.data || [];
-  const publicFolders = pubFolders.data || [];
-  const publicQuizzes = pubQuizzes.data || [];
-
-  // Look up owner display names for public results (small batch, only when needed)
-  let ownerMap = {};
-  const ownerIds = [...new Set([...publicFolders.map(f => f.user_id), ...publicQuizzes.map(qz => qz.user_id)])];
-  if (ownerIds.length) {
-    const { data: owners } = await sb.from('profiles').select('id, display_name').in('id', ownerIds);
-    (owners || []).forEach(o => { ownerMap[o.id] = o.display_name; });
-  }
+.flash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
 
-  el.innerHTML = '';
+.flash-card {
+  perspective: 1400px;
+  min-height: 320px;
+  cursor: pointer;
+}
 
-  if (!allUsers.length && !folders.length && !quizzes.length && !publicFolders.length && !publicQuizzes.length) {
-    el.innerHTML = '<div class="global-search-empty">No matches found.</div>';
-    return;
-  }
+.flash-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
+  transform-style: preserve-3d;
+}
 
-  if (allUsers.length) {
-    const label = document.createElement('div');
-    label.className = 'global-search-group-label';
-    label.textContent = 'Users';
-    el.appendChild(label);
-    allUsers.forEach(u => {
-      const row = document.createElement('div');
-      row.className = 'global-search-item';
-      const initials = (u.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      row.innerHTML = `
-        <div class="global-search-item-left">
-          <div class="global-search-item-text"><strong>${escHtml(u.display_name)}</strong><span>${escHtml(u.roll_no || '')}</span></div>
-        </div>
-        <button class="btn btn--primary btn--small global-search-item-tag">${friendButtonLabel(u.id)}</button>
-      `;
-      row.querySelector('.global-search-item-left').addEventListener('click', () => openFriendProfile(u));
-      wireAddFriendButton(row.querySelector('button'), u.id);
-      el.appendChild(row);
-    });
-  }
+.flash-card.flipped .flash-card-inner {
+  transform: rotateY(180deg);
+}
 
-  if (folders.length || quizzes.length) {
-    const label = document.createElement('div');
-    label.className = 'global-search-group-label';
-    label.textContent = 'Your Folders & Quizzes';
-    el.appendChild(label);
-    [...folders.map(f => ({ ...f, kind: 'folder' })), ...quizzes.map(qz => ({ ...qz, kind: 'quiz' }))].forEach(item => {
-      const row = document.createElement('div');
-      row.className = 'global-search-item';
-      row.innerHTML = `
-        <div class="global-search-item-left">
-          <div class="global-search-item-text">
-            <strong>${escHtml(item.name || item.title)}</strong>
-            <span>${item.kind === 'folder' ? '📁 Folder' : '📝 Quiz'}</span>
-          </div>
-        </div>
-        <span class="global-search-item-tag">Open</span>
-      `;
-      row.addEventListener('click', () => {
-        document.getElementById('global-search-input').value = '';
-        el.innerHTML = '';
-        if (item.kind === 'folder') {
-          openFolder(item.id, item.name, item.parent_id || null);
-        } else {
-          const parentFolder = foldersCache.find(f => f.id === item.folder_id);
-          if (parentFolder) openFolder(parentFolder.id, parentFolder.name, parentFolder.parent_id || null);
-          else showView('folder');
-        }
-      });
-      el.appendChild(row);
-    });
-  }
+.flash-card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-raised);
+}
 
-  if (publicFolders.length || publicQuizzes.length) {
-    const label = document.createElement('div');
-    label.className = 'global-search-group-label';
-    label.textContent = 'Public Folders & Quizzes';
-    el.appendChild(label);
-    [...publicFolders.map(f => ({ ...f, kind: 'folder' })), ...publicQuizzes.map(qz => ({ ...qz, kind: 'quiz' }))].forEach(item => {
-      const row = document.createElement('div');
-      row.className = 'global-search-item';
-      const ownerName = ownerMap[item.user_id] || 'Someone';
-      row.innerHTML = `
-        <div class="global-search-item-left">
-          <div class="global-search-item-text">
-            <strong>${escHtml(item.name || item.title)}</strong>
-            <span>${item.kind === 'folder' ? '📁 Folder' : '📝 Quiz'} · 🌐 by ${escHtml(ownerName)}</span>
-          </div>
-        </div>
-        <span class="global-search-item-tag">View</span>
-      `;
-      // Public folders/quizzes belong to someone else — open their public
-      // library (where this item appears with Like / Add to My Library)
-      // instead of the owner-only folder view used for our own content.
-      row.addEventListener('click', () => {
-        document.getElementById('global-search-input').value = '';
-        el.innerHTML = '';
-        openFriendProfile({ id: item.user_id, display_name: ownerName });
-      });
-      el.appendChild(row);
-    });
-  }
+.flash-card--bookmarked .flash-card-face {
+  border-color: var(--saffron);
+  border-width: 2px;
 }
 
-// ── ACTIVITY CALENDAR (real data) ────────────────────────────
-async function buildActivityCalendarReal(userId, gridId, monthsId) {
-  userId = userId || currentUser?.id;
-  gridId = gridId || 'contribution-grid';
-  monthsId = monthsId || 'contribution-months';
-  if (!userId) { buildActivityCalendar(); return; }
-
-  const { data } = await sb.from('quiz_attempts')
-    .select('attempted_at')
-    .eq('user_id', userId);
-
-  if (!data || data.length === 0) { buildActivityCalendar(gridId, monthsId); return; }
-
-  // Build date → count map
-  const countMap = {};
-  data.forEach(a => {
-    const d = a.attempted_at.slice(0, 10);
-    countMap[d] = (countMap[d] || 0) + 1;
-  });
-
-  const grid   = document.getElementById(gridId);
-  const months = document.getElementById(monthsId);
-  if (!grid) return;
-  grid.innerHTML = '';
-  months.innerHTML = '';
-
-  const WEEKS = 14;
-  const today = new Date();
-  const endOfWeek = new Date(today);
-  endOfWeek.setDate(today.getDate() + (6 - ((today.getDay() + 6) % 7)));
-  const startDate = new Date(endOfWeek);
-  startDate.setDate(endOfWeek.getDate() - WEEKS * 7 + 1);
-
-  let lastMonth = -1;
-  for (let col = 0; col < WEEKS; col++) {
-    const colStart = new Date(startDate);
-    colStart.setDate(startDate.getDate() + col * 7);
-    const label = document.createElement('span');
-    if (colStart.getMonth() !== lastMonth) {
-      label.textContent = colStart.toLocaleDateString('en-IN', { month: 'short' });
-      lastMonth = colStart.getMonth();
-    }
-    months.appendChild(label);
-
-    for (let row = 0; row < 7; row++) {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + col * 7 + row);
-      const cell = document.createElement('span');
-      cell.className = 'contribution-cell';
-      if (date > today) { cell.dataset.level = '0'; cell.style.visibility = 'hidden'; }
-      else {
-        const key = date.toISOString().slice(0, 10);
-        const count = countMap[key] || 0;
-        let level = 0;
-        if (count >= 5) level = 4;
-        else if (count >= 3) level = 3;
-        else if (count >= 2) level = 2;
-        else if (count >= 1) level = 1;
-        cell.dataset.level = level;
-        cell.title = `${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ${count} quiz${count === 1 ? '' : 'zes'}`;
-        if (count >= 3) cell.classList.add('contribution-cell--target');
-      }
-      grid.appendChild(cell);
-    }
-  }
+.flash-card--bookmarked .flash-card-back {
+  border-color: var(--saffron);
 }
 
-// ── FRIEND SEARCH LIVE ────────────────────────────────────────
-async function setupFriendSearch() {
-  const input   = document.getElementById('friend-search-input');
-  const results = document.getElementById('friend-search-results');
-  if (!input || !results) return;
-
-  let debounce;
-  input.addEventListener('input', () => {
-    clearTimeout(debounce);
-    const q = input.value.trim();
-    if (q.length < 2) { results.innerHTML = ''; results.style.display = 'none'; return; }
-    results.style.display = 'block';
-    results.innerHTML = '<div style="padding:.5rem 1rem;color:var(--slate)">Searching…</div>';
-    debounce = setTimeout(async () => {
-      const users = await searchUsers(q);
-      results.innerHTML = '';
-      if (!users.length) { results.innerHTML = '<div style="padding:.5rem 1rem;color:var(--slate)">No users found.</div>'; return; }
-      users.forEach(u => {
-        const row = document.createElement('div');
-        row.className = 'friend-search-result-row';
-        row.style.cssText = 'display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;cursor:pointer;border-bottom:1px solid var(--line)';
-        const initials = (u.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-        row.innerHTML = `
-          <div><strong>${escHtml(u.display_name)}</strong><br><small>${escHtml(u.roll_no || '')}</small></div>
-          <button class="btn btn--primary btn--small" style="margin-left:auto">${friendButtonLabel(u.id)}</button>
-        `;
-        wireAddFriendButton(row.querySelector('button'), u.id);
-        results.appendChild(row);
-      });
-    }, 300);
-  });
-
-  input.addEventListener('blur', () => setTimeout(() => results.style.display = 'none', 200));
-}
-
-// ── UTILS ─────────────────────────────────────────────────────
-function escHtml(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return m + 'm ago';
-  const h = Math.floor(m / 60);
-  if (h < 24) return h + 'h ago';
-  return Math.floor(h / 24) + 'd ago';
-}
-
-// ── WIRE UP EXISTING STATIC HANDLERS ─────────────────────────
-// These override / extend the static app.js handlers
-
-// Auth forms
-// (removeEventListener no-op removed — anonymous functions can't be unregistered)
-document.getElementById('form-login').addEventListener('submit', handleLogin);
-document.getElementById('form-signup').addEventListener('submit', handleSignup);
-document.getElementById('btn-logout').addEventListener('click', handleLogout);
-
-// Theme persistence
-['btn-theme', 'btn-theme-mobile'].forEach(id => {
-  document.getElementById(id)?.addEventListener('click', () => setTimeout(persistTheme, 100));
-});
-
-// Profile public toggle persistence
-document.getElementById('toggle-profile-public')?.addEventListener('change', () => {
-  const checked = document.getElementById('toggle-profile-public').checked;
-  sb.from('profiles').update({ is_public: checked }).eq('id', currentUser?.id);
-  if (currentProfile) currentProfile.is_public = checked;
-  const privateHint = document.getElementById('profile-private-hint');
-  if (privateHint) privateHint.style.display = checked ? 'none' : 'block';
-});
-
-// Save quiz (override static handler)
-document.getElementById('btn-save-quiz').addEventListener('click', e => {
-  e.stopImmediatePropagation();
-  saveQuiz();
-}, true);
-
-// Create group
-['btn-create-group', 'btn-new-group'].forEach(id => document.getElementById(id)?.addEventListener('click', async () => {
-  const name = prompt('Group name (e.g. GS, MATHS, ENGLISH):');
-  if (!name || !name.trim()) return;
-  const { data, error } = await sb.from('groups').insert({
-    user_id: currentUser.id,
-    name: name.trim(),
-    sort_order: groupsCache.length
-  }).select().single();
-  if (error) { toast('Could not create group: ' + error.message, 'error'); return; }
-  groupsCache.push(data);
-  renderFolders();
-  toast('Group "' + name.trim() + '" created!', 'success');
-}));
-
-
-// Create folder
-document.getElementById('btn-create-folder').addEventListener('click', async e => {
-  e.stopImmediatePropagation();
-  const name = document.getElementById('new-folder-name').value.trim();
-  if (!name) return;
-  closeModal('modal-folder');
-  document.getElementById('new-folder-name').value = '';
-  createFolder(name);
-}, true);
-
-// Export backup (override static)
-document.getElementById('btn-export-all').addEventListener('click', e => {
-  e.stopImmediatePropagation();
-  exportBackup();
-}, true);
-
-// Restore backup (override static)
-document.getElementById('btn-do-restore').addEventListener('click', async e => {
-  e.stopImmediatePropagation();
-  const raw = document.getElementById('restore-paste-area').value.trim();
-  if (!raw) { toast('Paste or upload a backup JSON first.', 'error'); return; }
-  await importBackup(raw);
-}, true);
-
-// Load data when views open
-document.querySelectorAll('.nav-link[data-view], [data-view]').forEach(el => {
-  el.addEventListener('click', () => {
-    const view = el.dataset.view;
-    if (view === 'history')   { loadHistory(); loadSharedSessions(); loadRaceHistory(); }
-    if (view === 'bookmarks') loadBookmarks();
-    if (view === 'notes')     loadNotes();
-    if (view === 'friends')   { loadFriends(); loadUnreadCount(); }
-    if (view === 'inbox')     loadInbox();
-    if (view === 'profile') {
-      buildPublicLibrary();
-      buildActivityCalendarReal();
-      loadMyProfileStats();
-    }
-    // Pomodoro / Race views are static landing pages — no data load needed.
-    // The actual Pomodoro flow is triggered from folder quiz slips.
-  });
-});
-
-// Bookmark button in quiz player
-document.getElementById('btn-q-bookmark')?.addEventListener('click', bookmarkCurrentQuestion);
-
-// Override renderPlayer to use real questions from Supabase.
-// oldstatic.js exposes renderPlayer on window; we replace it before the
-// quiz begins so that buildQuizState → renderPlayer() calls our version.
-const origBeginBtn = document.getElementById('btn-begin-quiz');
-origBeginBtn?.addEventListener('click', () => {
-  if (activeQuizQuestions.length > 0) {
-    // Apply question-selection (range / random pick) and shuffle settings
-    // from the Quiz Setup screen before building the quiz state.
-    let pool = (activeFullQuizQuestions.length ? activeFullQuizQuestions : activeQuizQuestions).slice();
-    activeFullQuizQuestions = pool.slice();
-
-    const selectMode = document.querySelector('[data-select-mode].active')?.dataset.selectMode || 'range';
-    if (selectMode === 'random') {
-      const n = Math.min(parseInt(document.getElementById('random-count')?.value, 10) || pool.length, pool.length);
-      pool = [...pool].sort(() => Math.random() - 0.5).slice(0, n);
-    } else {
-      const from = Math.max(1, parseInt(document.getElementById('range-from')?.value, 10) || 1);
-      const to   = Math.min(pool.length, parseInt(document.getElementById('range-to')?.value, 10) || pool.length);
-      pool = pool.slice(from - 1, to);
-    }
-
-    if (document.getElementById('toggle-shuffle-q')?.checked) {
-      pool = [...pool].sort(() => Math.random() - 0.5);
-    }
-    if (document.getElementById('toggle-shuffle-opt')?.checked) {
-      pool = pool.map(q => {
-        if (!Array.isArray(q.options)) return q;
-        const order = q.options.map((_, i) => i).sort(() => Math.random() - 0.5);
-        return {
-          ...q,
-          options: order.map(i => q.options[i]),
-          correctIndex: order.indexOf(q.correctIndex)
-        };
-      });
-    }
-
-    activeQuizQuestions = pool;
-    document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
-
-    window._origRenderPlayer = window.renderPlayer;
-    window.renderPlayer = renderPlayerReal;
-    // Patch goToQuestion to also use renderPlayerReal
-    const origGTQ = window.goToQuestion;
-    if (origGTQ) {
-      window.goToQuestion = function(index) {
-        if (index < 0 || index >= quizState.length) return;
-        currentQ = index;
-        renderPlayerReal();
-      };
-    }
-  }
-}, true);
-
-// Result page — save attempt exactly once when quiz ends.
-// Two paths lead to the result screen:
-//  1. btn-next-q on the last question, when all questions are answered
-//     (openEndQuizConfirm skips the modal and goes straight to result)
-//  2. btn-confirm-end-quiz, when some questions were unanswered and the
-//     user confirmed via the "Submit Quiz" modal
-let _attemptSaved = false;
-
-document.getElementById('btn-confirm-end-quiz')?.addEventListener('click', () => {
-  // oldstatic.js already handles stopTimer() + showView('result') for this button.
-  if (_attemptSaved) return;
-  _attemptSaved = true;
-  setTimeout(() => saveAttempt(), 50);
-});
-document.getElementById('btn-next-q')?.addEventListener('click', () => {
-  // When Finish is clicked on the last question AND all questions are
-  // answered, openEndQuizConfirm() jumps straight to the result view
-  // without opening the confirm modal — save here in that case only.
-  if (currentQ === (quizState.length - 1)) {
-    const unanswered = quizState.filter(q => !q.answered).length;
-    if (unanswered === 0 && !_attemptSaved) {
-      _attemptSaved = true;
-      setTimeout(saveAttempt, 100);
-    }
-  }
-});
-
-// Reset the save-guard whenever a new quiz attempt begins.
-document.getElementById('btn-begin-quiz')?.addEventListener('click', () => {
-  _attemptSaved = false;
-}, true);
-
-// Global search (override static)
-const gsi = document.getElementById('global-search-input');
-gsi?.addEventListener('input', () => renderGlobalSearchResults(gsi.value));
-gsi?.addEventListener('focus', () => renderGlobalSearchResults(gsi.value));
-
-// Profile save button (add if not present)
-const profileView = document.getElementById('view-profile');
-
-// Preview my own public profile (read-only)
-document.getElementById('btn-preview-public-profile')?.addEventListener('click', () => {
-  if (!currentUser) return;
-  openFriendProfile({ id: currentUser.id });
-});
-if (profileView && !document.getElementById('btn-save-profile')) {
-  const saveBtn = document.createElement('button');
-  saveBtn.id = 'btn-save-profile';
-  saveBtn.className = 'btn btn--primary';
-  saveBtn.textContent = '💾 Save Profile';
-  saveBtn.style.marginTop = '1rem';
-  saveBtn.addEventListener('click', saveProfile);
-  const profileCard = profileView.querySelector('.profile-card');
-  if (profileCard) profileCard.appendChild(saveBtn);
-}
-
-// Pin persistence: override pinItem / unpinItem
-const origPinItem   = window.pinItem;
-const origUnpinItem = window.unpinItem;
-if (origPinItem) {
-  window.pinItem = function(type, id, name, meta) {
-    origPinItem(type, id, name, meta);
-    savePinToDb(type, id, name, meta);
-  };
-}
-if (origUnpinItem) {
-  window.unpinItem = function(type, id) {
-    origUnpinItem(type, id);
-    removePinFromDb(type, id);
-  };
-}
-
-// Setup friend search
-setupFriendSearch();
-
-// Bookmarks toolbar: reset filter to "All"
-document.getElementById('btn-bookmark-quiz')?.addEventListener('click', () => {
-  bookmarksFilter = 'all';
-  renderBookmarkFilters();
-  renderBookmarks();
-});
-
-// Bookmarks toolbar: flip all cards
-document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
-  const cards = document.querySelectorAll('#bookmark-grid .flash-card');
-  const anyUnflipped = [...cards].some(c => !c.classList.contains('flipped'));
-  cards.forEach(c => c.classList.toggle('flipped', anyUnflipped));
-});
-
-// ── SESSION RESTORE ───────────────────────────────────────────
-// Check for existing session on page load
-(async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session?.user) {
-    await onSignedIn(session.user);
-  }
+.flash-card-back {
+  transform: rotateY(180deg);
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
 
-  // Listen for auth changes (token refresh, signout on another tab)
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session?.user && !currentUser) {
-      await onSignedIn(session.user);
-    }
-    if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      currentProfile = null;
-    }
-  });
-})();
-// Flashcard back button
-document.getElementById('btn-flash-back')?.addEventListener('click', () => {
-  if (activeFolderId && activeFolderName) {
-    openFolder(activeFolderId, activeFolderName);
-  } else {
-    showView('dashboard');
-  }
-});
-// Flashcard shuffle options button
-document.getElementById('btn-flash-shuffle-opts')?.addEventListener('click', () => {
-  const grid = document.getElementById('flash-grid');
-  if (!grid) return;
-  grid.querySelectorAll('.flash-card').forEach(card => {
-    const front = card.querySelector('.flash-card-options');
-    if (!front) return;
-    const items = [...front.querySelectorAll('li')];
-    if (items.length < 2) return;
-    // Find which li is the correct one before shuffle
-    const correctLi = items.find(li => li.classList.contains('correct-opt'));
-    // Fisher-Yates shuffle
-    for (let i = items.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      front.insertBefore(items[j], items[i]);
-      [items[i], items[j]] = [items[j], items[i]];
-    }
-    // Re-label A, B, C, D after shuffle
-    [...front.querySelectorAll('li')].forEach((li, idx) => {
-      const marker = li.querySelector('.option-marker');
-      if (marker) marker.textContent = String.fromCharCode(65 + idx);
-    });
-  });
-});
-
-
-
-async function handleLogout() {
-  await sb.auth.signOut();
-  currentUser = null;
-  currentProfile = null;
-  document.getElementById('app-shell').style.visibility = 'hidden';
-document.getElementById('app-shell').style.pointerEvents = 'none';
-  // ADD THIS:
-  const mobileNav = document.querySelector('.mobile-nav');
-  if (mobileNav) mobileNav.style.display = 'none';
-  const auth = document.getElementById('view-auth');
-  auth.style.display = 'flex';
-  auth.classList.add('active');
-  toast('Logged out.', 'info');
-}
-// ── RESET MY DATA BUTTON ─────────────────────────────────────
-async function resetMyData() {
-  // Double confirmation
-  const first = confirm('⚠️ Are you sure? This will delete ALL your quizzes, folders, history, bookmarks, notes, and friends.');
-  if (!first) return;
-  const second = confirm('🚨 Final warning! This CANNOT be undone. Type OK to confirm.');
-  if (!second) return;
-
-  const btn = document.getElementById('btn-reset-data');
-  setLoading(btn, true, 'Resetting...');
-
-  const { error } = await sb.rpc('reset_user_data', { target_user_id: currentUser.id });
-
-  setLoading(btn, false);
-
-  if (error) {
-    toast('Reset failed: ' + error.message, 'error');
-    return;
-  }
+.flash-card-back .flash-num {
+  background: var(--saffron);
+  color: var(--ink);
+}
+
+.flash-card-back .icon-btn {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--paper);
+}
+
+.flash-card-back .icon-btn:hover {
+  background: rgba(232,147,46,0.2);
+  border-color: var(--saffron);
+}
+
+.flash-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.flash-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--saffron);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.flash-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.flash-actions .icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 0.8rem;
+}
+
+.flash-question {
+  font-size: 1.02rem;
+  line-height: 1.5;
+  margin-bottom: 0.85rem;
+}
+
+.flash-card-options {
+  list-style: none;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.flash-card-options li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+/* Highlight the correct answer option on the front face */
+/* correct-opt only shows on back face after flip */
+.flash-card.flipped .flash-card-back .flash-card-options li.correct-opt {
+  border-color: var(--success);
+  background: rgba(72, 187, 120, 0.08);
+  font-weight: 600;
+}
+
+.flash-card-options .option-marker {
+  width: 20px;
+  height: 20px;
+  font-size: 0.7rem;
+}
+
+.flash-answer-line {
+  color: var(--success);
+  font-size: 1.05rem;
+  margin-bottom: 0.6rem;
+}
+
+.flash-explanation-line {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: rgba(250,246,238,0.8);
+}
+
+.flash-hint {
+  margin-top: auto;
+  font-size: 0.72rem;
+  color: var(--slate);
+  text-align: center;
+  padding-top: 0.75rem;
+}
+
+.flash-card-back .flash-hint {
+  color: rgba(250,246,238,0.4);
+}
+
+.flash-card-source {
+  margin-top: auto;
+  font-size: 0.7rem;
+  color: rgba(250,246,238,0.5);
+  text-align: right;
+  padding-top: 0.5rem;
+}
+
+.flash-card--hidden {
+  display: none !important;
+}
+
+/* ── Sidebar section label ────────────────────── */
+.nav-section-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(237,230,216,0.35);
+  padding: 0.75rem 0.85rem 0.3rem;
+}
+.nav-badge--race {
+  font-size: 0.55rem;
+  background: #F5A832;
+  color: #0f0f0f;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.nav-link--race { color: rgba(245,168,50,0.85) !important; }
+.nav-link--race:hover,
+.nav-link--race.active { color: #0f0f0f !important; }
+
+/* ── Pomodoro / Race landing view ─────────────── */
+.pomodoro-landing {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+.pomo-landing-card {
+  max-width: 480px;
+  width: 100%;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1rem;
+}
+.pomo-race-landing-card {
+  border-color: rgba(245,168,50,0.4);
+  background: linear-gradient(135deg, var(--paper-raised), rgba(245,168,50,0.04));
+}
+.pomo-landing-icon { font-size: 3rem; line-height: 1; }
+.pomo-landing-card h3 { font-size: 1.25rem; font-weight: 800; margin: 0; }
+.pomo-landing-card p  { font-size: 0.88rem; color: var(--slate); line-height: 1.7; max-width: 380px; }
+.pomo-landing-steps   { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; text-align: left; }
+.pomo-landing-step    { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; color: var(--ink-soft); }
+.pomo-landing-step span:first-child {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--saffron); color: var(--ink);
+  font-size: 0.7rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.pomo-race-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
+.pomo-race-badge  {
+  font-size: 0.72rem; padding: 0.25rem 0.65rem; border-radius: 20px;
+  background: rgba(245,168,50,0.1); border: 1px solid rgba(245,168,50,0.3); color: var(--ink-soft);
+}
+
+
+.bookmark-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.bookmark-filter-chip {
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+}
+
+.bookmark-filter-chip.active {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* =========================================================
+   HISTORY
+   ========================================================= */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1.25rem;
+}
+
+.history-info { flex: 1; }
+.history-info h4 { font-size: 0.95rem; margin-bottom: 0.15rem; }
+.history-folder { font-size: 0.75rem; color: var(--slate); }
+
+.history-score {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+}
+
+.history-score--good { color: var(--success); background: var(--success-soft); }
+.history-score--bad { color: var(--error); background: var(--error-soft); }
+
+/* New history card style used by renderHistory / renderSharedSessions */
+.history-item {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1.1rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.history-item:hover {
+  border-color: var(--saffron);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.history-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.history-item-top strong {
+  font-size: 0.98rem;
+  line-height: 1.3;
+}
+.history-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--slate);
+  font-family: var(--font-mono);
+}
+.score--good, .score--ok, .score--low {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.score--good { color: var(--success); background: var(--success-soft); }
+.score--ok   { color: var(--saffron); background: var(--saffron-soft); }
+.score--low  { color: var(--error); background: var(--error-soft); }
+
+.history-date {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--slate);
+  width: 80px;
+  text-align: right;
+}
+
+/* =========================================================
+   MODALS
+   ========================================================= */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10,15,25,0.6);
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.modal.active { display: flex; }
+
+.modal-card {
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--shadow-modal);
+  max-height: 90vh;
+  overflow-y: auto;
+  margin: auto;
+}
+
+.modal-card h3 { margin-bottom: 0.5rem; }
+.modal-card p { color: var(--slate); font-size: 0.85rem; margin-bottom: 1.25rem; }
+
+.modal-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+}
 
-  toast('All data reset successfully!', 'success');
-
-  // Reload app fresh
-  setTimeout(() => location.reload(), 1500);
-}
-// Add Reset button in profile view
-if (profileView && !document.getElementById('btn-reset-data')) {
-  const resetBtn = document.createElement('button');
-  resetBtn.id = 'btn-reset-data';
-  resetBtn.className = 'btn btn--danger';
-  resetBtn.textContent = '🗑️ Reset My Data';
-  resetBtn.style.marginTop = '0.5rem';
-  resetBtn.addEventListener('click', resetMyData);
-  const profileCard = profileView.querySelector('.profile-card');
-  if (profileCard) profileCard.appendChild(resetBtn);
-}
-// Add Reset button in profile view
-if (profileView && !document.getElementById('btn-reset-data')) {
-  const resetBtn = document.createElement('button');
-  resetBtn.id = 'btn-reset-data';
-  resetBtn.className = 'btn';
-  resetBtn.textContent = '🗑️ Reset My Data';
-  resetBtn.addEventListener('click', resetMyData);
-  const profileCard = profileView.querySelector('.profile-card');
-  if (profileCard) profileCard.appendChild(resetBtn);
+.modal-card input, .modal-card select {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+}
+.modal-card select { width: 100%; font-family: inherit; }
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.share-link-row input {
+  flex: 1;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--paper-raised);
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width: 880px) {
+  .sidebar { display: none; }
+
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--paper-raised);
+    border-top: 1px solid var(--line);
+    z-index: 50;
+  }
+
+  .mobile-nav .nav-link {
+    flex: 1;
+    flex-direction: column;
+    gap: 0.2rem;
+    text-align: center;
+    font-size: 0.65rem;
+    padding: 0.6rem 0.25rem;
+    border-radius: 0;
+  }
+
+  .mobile-nav .nav-icon { font-size: 1.2rem; }
+
+  .mobile-nav .nav-link.active {
+    background: none;
+    color: var(--saffron);
+  }
+  .mobile-nav .nav-link { color: var(--slate); }
+
+  .main {
+    padding: 1.25rem 1rem 5.5rem;
+    max-width: 100%;
+     margin-top: 40px;
+  }
+
+  .view-header h2 { font-size: 1.4rem; }
+
+  .result-summary { flex-direction: column; align-items: flex-start; }
+
+  .player-footer { flex-wrap: wrap; gap: 0.6rem; }
+
+  .player-jump { order: 3; width: 100%; }
+
+  .flash-grid { grid-template-columns: 1fr; }
+
+  .flash-card, .flash-card-inner { min-height: 280px; }
+}
+
+@media (max-width: 480px) {
+  .auth-card { padding: 1.75rem 1.5rem; }
+  .question-card { padding: 1.25rem; }
+  .question-text { font-size: 1.05rem; }
+  .setup-card { padding: 1.5rem; }
+}
+
+/* =========================================================
+   DARK MODE
+   ========================================================= */
+[data-theme="dark"] {
+  --ink: #EDE6D8;          /* brighter — was too dim on dark bg */
+  --ink-soft: #C8BFA8;     /* labels, secondary text */
+  --paper: #13161E;        /* main background */
+  --paper-raised: #1C2130; /* cards, inputs */
+  --saffron: #F5A832;      /* slightly warmer orange, more readable */
+  --saffron-soft: rgba(245,168,50,0.14);
+  --success: #52C47A;
+  --success-soft: rgba(82,196,122,0.14);
+  --error: #E85C58;
+  --error-soft: rgba(232,92,88,0.14);
+  --slate: #8494A8;        /* brighter slate for better visibility */
+  --line: #252C3A;         /* subtle card borders */
+  --line-strong: #3B4560;  /* stronger borders, inputs */
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
+  --shadow-modal: 0 12px 40px rgba(0,0,0,0.65);
+}
+
+[data-theme="dark"] .sidebar { background: #0A0D14; }
+[data-theme="dark"] .view--auth { background: #0D1018; }
+[data-theme="dark"] #json-paste-area { background: #0D1018; border-color: var(--line-strong); }
+[data-theme="dark"] .player-timer { background: #0D1018; }
+[data-theme="dark"] .brand-mark { background: var(--saffron); color: #0D1018; }
+[data-theme="dark"] .flash-card-back { background: #0D1018; border-color: #0D1018; }
+
+/* Dark mode — input/select backgrounds */
+[data-theme="dark"] .card input,
+[data-theme="dark"] .card select,
+[data-theme="dark"] .card textarea {
+  background: #0D1018;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+[data-theme="dark"] .auth-form input {
+  background: #0D1018;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+[data-theme="dark"] .modal-card input {
+  background: #0D1018;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+/* Dark mode — mobile nav bottom bar */
+[data-theme="dark"] .mobile-nav {
+  background: #1C2130;
+  border-top-color: var(--line);
+}
+/* Dark mode — hint code blocks */
+[data-theme="dark"] .hint code {
+  background: #0D1018;
+  color: var(--saffron);
+}
+/* Dark mode — folder count badge */
+[data-theme="dark"] .folder-count {
+  background: #0D1018;
+  color: var(--slate);
+}
+
+/* Dark mode — placeholder text */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #5A6478;
+}
+
+/* Dark mode — select appearance */
+[data-theme="dark"] select {
+  background: var(--paper-raised);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* Dark mode — global search */
+[data-theme="dark"] .global-search-bar {
+  background: var(--paper-raised);
+  border-color: var(--line-strong);
+}
+[data-theme="dark"] .global-search-bar input { color: var(--ink); }
+[data-theme="dark"] .global-search-results { background: var(--paper-raised); }
+
+/* =========================================================
+   MOBILE TOPBAR + HAMBURGER
+   ========================================================= */
+/* Note: full .mobile-topbar definition is in the MOBILE OVERHAUL section below */
+
+.hamburger {
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #EDE6D8;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: #EDE6D8;
+}
+
+.brand-mark--sm {
+  width: 30px;
+  height: 30px;
+  font-size: 0.7rem;
+  background: var(--saffron);
+  color: #1B2A4A;
+}
+
+.mobile-brand em { color: var(--saffron); font-style: italic; }
+
+/* Sidebar overlay for mobile */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 70;
+}
+
+.sidebar-backdrop.active { display: block; }
+
+.sidebar-close {
+  display: none;
+  background: none;
+  border: none;
+  color: rgba(250,246,238,0.6);
+  font-size: 1.1rem;
+  margin-left: auto;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+
+.sidebar-util-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sidebar-util-row .btn {
+  flex: 1;
+  color: #EDE6D8;
+  border-color: rgba(255,255,255,0.2);
+}
+.sidebar-util-row .btn:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.4);
+  color: #EDE6D8;
+}
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--error);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================================================
+   THEME TOGGLE BUTTON
+   ========================================================= */
+.theme-toggle {
+  font-size: 0.8rem;
+  gap: 0.35rem;
+}
+
+/* =========================================================
+   AI PROMPT BOX
+   ========================================================= */
+.ai-prompt-box {
+  background: linear-gradient(135deg, rgba(232,147,46,0.08), rgba(232,147,46,0.04));
+  border: 1px solid rgba(232,147,46,0.3);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.ai-prompt-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ai-prompt-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.ai-prompt-head > div { flex: 1; }
+
+.ai-prompt-head strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+}
+
+.ai-prompt-head p {
+  font-size: 0.78rem;
+  color: var(--slate);
+}
+
+.ai-prompt-text {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  user-select: all;
+}
+
+/* =========================================================
+   INSERT AT INDEX (create page)
+   ========================================================= */
+.card--insert { border-left: 3px solid var(--saffron); }
+.optional-tag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--slate);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+
+.insert-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.insert-row label {
+  flex: 1;
+  min-width: 140px;
+}
+.insert-pos-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hint-inline {
+  font-size: 0.72rem;
+  color: var(--slate);
+}
+.card-desc {
+  font-size: 0.82rem;
+  color: var(--slate);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+.backup-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.backup-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  max-width: 700px;
+}
+.backup-restore-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+#restore-paste-area {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+  background: var(--ink);
+  color: #C9E4D5;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  padding: 1rem;
+}
+
+/* =========================================================
+   FRIENDS PAGE
+   ========================================================= */
+.friend-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0 1rem;
+  margin-bottom: 1.75rem;
+  max-width: 500px;
+}
+.search-icon { color: var(--slate); margin-right: 0.5rem; }
+.friend-search-bar input {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 0.75rem 0;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.friend-search-bar input:focus { outline: none; }
+.friend-search-results {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  z-index: 50;
+  overflow: hidden;
+}
+.friend-search-bar input:focus ~ .friend-search-results,
+.friend-search-results:hover { display: block; }
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--paper); }
+
+.friends-section {
+  margin-bottom: 2.25rem;
+}
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+}
+.section-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  margin-bottom: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.count-chip {
+  background: var(--saffron);
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+}
+
+.badge-soon {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--slate);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+}
+
+.groups-empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 2.25rem 1.5rem;
+  color: var(--slate);
+}
+.groups-empty-icon {
+  font-size: 2.25rem;
+  opacity: 0.6;
+}
+.groups-empty-state h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.groups-empty-state p {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  max-width: 360px;
+  margin: 0;
+}
+
+.friend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+}
+.friend-row--request { border-left: 3px solid var(--saffron); }
+
+.friend-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--saffron);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.friend-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.65rem;
+}
+.friend-avatar--more {
+  background: var(--line);
+  color: var(--slate);
+  font-size: 0.6rem;
+}
+
+.friend-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.friend-info strong { font-size: 0.9rem; }
+.friend-info span { font-size: 0.75rem; color: var(--slate); }
+
+.friend-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* ── Friend cards (My Friends list) ──────────────────────── */
+.friend-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+.friend-card:hover {
+  border-color: var(--saffron);
+  transform: translateY(-1px);
+}
+.friend-card .friend-info {
+  cursor: pointer;
+}
+.friend-card .friend-rollno {
+  font-family: var(--font-mono);
+}
+.friend-card-chevron {
+  font-size: 1.4rem;
+  color: var(--line-strong);
+  flex-shrink: 0;
+  transition: color 0.12s ease, transform 0.12s ease;
+}
+.friend-card:hover .friend-card-chevron {
+  color: var(--saffron);
+  transform: translateX(2px);
+}
+@media (max-width: 520px) {
+  .friend-card-chevron { display: none; }
+}
+
+/* ── Pending friend requests ─────────────────────────────── */
+.friend-request-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  background: var(--saffron-soft);
+  border: 1px solid var(--saffron);
+  border-left: 3px solid var(--saffron);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+.friend-request-row .friend-info strong {
+  font-size: 0.9rem;
+}
+.friend-request-row .friend-info span {
+  font-family: var(--font-mono);
+}
+
+/* ── Shared action-button row (friend cards + requests) ──── */
+.friend-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* ── Empty states ─────────────────────────────────────────── */
+.friend-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.4rem;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 2rem 1.5rem;
+  color: var(--slate);
+}
+.friend-list-empty-icon {
+  font-size: 2rem;
+  opacity: 0.6;
+}
+.friend-list-empty h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.friend-list-empty p {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .friend-card, .friend-request-row {
+    flex-wrap: wrap;
+  }
+  .friend-card .friend-actions,
+  .friend-request-row .friend-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Groups grid */
+.groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.group-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.1rem;
+  box-shadow: var(--shadow-card);
+}
+.group-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+.group-icon { font-size: 1.4rem; }
+.group-count { font-size: 0.72rem; color: var(--slate); font-family: var(--font-mono); }
+.group-card h4 { font-size: 0.95rem; margin-bottom: 0.6rem; }
+.group-members {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+.group-actions { display: flex; gap: 0.4rem; }
+.group-card--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 2px dashed var(--line-strong);
+  background: transparent;
+  box-shadow: none;
+  color: var(--slate);
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 130px;
+  font-size: 1.5rem;
+}
+.group-card--add:hover {
+  border-color: var(--saffron);
+  color: var(--saffron);
+  background: var(--saffron-soft);
+}
+.group-icon-sm { font-size: 1.2rem; }
+
+/* =========================================================
+   SHARE MODAL — ENHANCED
+   ========================================================= */
+.modal-card--wide { max-width: 520px; }
+#modal-add-question .modal-card { max-width: 760px; }
+.share-tabs {
+  display: flex;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 1.25rem;
+}
+.share-tabs .tab-btn { flex: 1; font-size: 0.8rem; padding: 0.5rem 0.4rem; }
+.share-pane { display: none; }
+.share-pane.active { display: block; }
+
+.share-option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin-top: 0.75rem;
+  cursor: pointer;
+}
+.share-option-row input { margin-top: 2px; accent-color: var(--saffron); }
+
+.friend-pick-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0.15rem;
+}
+@media (max-width: 520px) {
+  .friend-pick-list { grid-template-columns: 1fr; }
+}
+.friend-pick-list--compact { max-height: 160px; }
+.modal-card .friend-pick-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.1s;
+  font-size: 0.88rem;
+  font-weight: 400;
+  background: var(--paper-raised);
+  margin-bottom: 0;
+}
+.friend-pick-item:hover { border-color: var(--saffron); background: var(--saffron-soft); }
+.friend-pick-item input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  background: var(--paper);
+}
+.friend-pick-item input[type="checkbox"]:checked {
+  background: var(--saffron);
+  border-color: var(--saffron);
+}
+.friend-pick-item input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -54%);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+.friend-pick-item:has(input:checked) {
+  border-color: var(--saffron);
+  background: var(--saffron-soft);
+}
+.friend-pick-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   LEADERBOARD MODAL
+   ========================================================= */
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.leaderboard-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.leaderboard-row--me {
+  background: var(--saffron-soft);
+  border-color: var(--saffron);
+}
+.leaderboard-row--pending { opacity: 0.6; }
+.leaderboard-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.leaderboard-row--pending .leaderboard-row-main { display: flex; align-items: center; gap: 0.75rem; }
+.lb-rank { font-size: 1.1rem; width: 24px; text-align: center; flex-shrink: 0; }
+.lb-rank--pending { font-family: var(--font-mono); font-size: 0.85rem; color: var(--slate); }
+.lb-info { flex: 1; }
+.lb-info strong { font-size: 0.88rem; display: block; }
+.lb-info span { font-size: 0.72rem; color: var(--slate); }
+.lb-score {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--success);
+  width: 44px;
+  text-align: right;
+}
+.lb-score--pending { color: var(--slate); }
+.lb-time {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--slate);
+  width: 44px;
+  text-align: right;
+}
+
+/* ── Multiple attempts per user ──────────────────────────── */
+.lb-attempts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem 0.1rem;
+  margin-left: calc(24px + 28px + 0.75rem + 0.75rem); /* align under name, past rank+avatar+gaps */
+  border-top: 1px dashed var(--line);
+}
+.lb-attempt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--slate);
+}
+.lb-attempt-row--first {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.lb-attempt-label {
+  flex: 1;
+}
+.lb-attempt-score {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  width: 40px;
+  text-align: right;
+}
+.lb-attempt-time {
+  font-family: var(--font-mono);
+  width: 44px;
+  text-align: right;
+}
+
+@media (max-width: 480px) {
+  .lb-attempts {
+    margin-left: 0;
+  }
+}
+
+/* =========================================================
+   FOLDER HEADER ACTIONS
+   ========================================================= */
+.folder-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* =========================================================
+   RESPONSIVE — NEW ADDITIONS
+   ========================================================= */
+   @media (max-width: 880px) {
+
+  .app-shell{
+      display:block;
+  }
+
+ 
+
+}
+@media (max-width: 880px) {
+  .mobile-topbar { display: flex; height: fit-content; }
+
+   .sidebar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    height: 100vh;
+    width: 240px;
+    z-index: 80;
+    overflow-y: auto;
+
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-close { display: block; }
+
+  .main { padding: 1.25rem 1rem 5.5rem; }
+
+  .friend-search-bar { max-width: 100%; }
+  .groups-grid { grid-template-columns: 1fr 1fr; }
+  .friend-row-actions { flex-direction: column; gap: 0.3rem; }
+  .folder-header-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 480px) {
+  .groups-grid { grid-template-columns: 1fr; }
+  .backup-actions { flex-direction: column; }
+  .leaderboard-row { flex-wrap: wrap; }
+}
+/* =========================================================
+   INBOX VIEW
+   ========================================================= */
+.inbox-filter-row {
+  display: flex;
+  gap: 4px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+.inbox-filter-row .seg-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 100%;
+  align-items: stretch;
+}
+
+.inbox-item {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.inbox-item--challenge {
+  border-left: 4px solid #E06020;
+  background: linear-gradient(135deg, rgba(224,96,32,0.04), transparent 60%);
+}
+.inbox-item--quiz { border-left: 4px solid var(--saffron); }
+.inbox-item--chapter { border-left: 4px solid var(--success); }
+
+.inbox-item-left { flex: 1; min-width: 240px; }
+
+.inbox-type-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  margin-bottom: 0.7rem;
+}
+.inbox-type-badge--challenge { background: rgba(224,96,32,0.12); color: #C05010; }
+.inbox-type-badge--quiz { background: var(--saffron-soft); color: #B06000; }
+.inbox-type-badge--chapter { background: var(--success-soft); color: var(--success); }
+
+[data-theme="dark"] .inbox-type-badge--quiz { color: var(--saffron); }
+[data-theme="dark"] .inbox-type-badge--challenge { color: #F07030; }
+
+.inbox-sender {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.inbox-sender > div strong { display: block; font-size: 0.88rem; }
+.inbox-sender > div span { font-size: 0.72rem; color: var(--slate); }
+
+.inbox-title {
+  font-size: 1.05rem;
+  margin-bottom: 0.4rem;
+}
+
+.inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--slate);
+  margin-bottom: 0.6rem;
+}
+
+.score-highlight { color: var(--error); font-size: 0.95rem; }
+
+.inbox-chapter-quizzes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.mini-quiz-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 0.2rem 0.55rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--ink-soft);
+}
+
+.inbox-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: stretch;
+  min-width: 160px;
+}
+
+.inbox-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--slate);
+}
+.inbox-empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+.inbox-empty h3 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+.inbox-empty p { font-size: 0.85rem; }
+.inbox-expire-note { font-size: 0.75rem; color: var(--slate); margin-top: 0.5rem; opacity: 0.7; }
+
+/* ── Shared By Me ─────────────────────────── */
+.shared-by-me-section {
+  max-width: 100%;
+  margin-top: 2rem;
+  align-items: stretch;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+.shared-by-me-hint {
+  font-size: 0.78rem;
+  color: var(--slate);
+  margin-bottom: 0.85rem;
+  line-height: 1.5;
+}
+.shared-by-me-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.shared-by-me-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: opacity 0.2s;
+}
+.shared-by-me-row--expired {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.shared-by-me-icon { font-size: 1.25rem; flex-shrink: 0; }
+.shared-by-me-info { flex: 1; min-width: 0; }
+.shared-by-me-title { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shared-by-me-meta  { font-size: 0.72rem; color: var(--slate); margin-top: 0.1rem; }
+.shared-by-me-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.shared-status {
+  font-size: 0.68rem; font-weight: 700; padding: 0.18rem 0.5rem;
+  border-radius: 20px; white-space: nowrap;
+}
+.shared-status--accepted { background: rgba(39,174,96,0.12); color: var(--success); }
+.shared-status--pending  { background: var(--saffron-soft); color: #B06000; }
+.shared-status--expired  { background: var(--error-soft); color: var(--error); }
+
+/* Mobile badge on bottom nav */
+.mobile-nav .nav-link { position: relative; }
+.mobile-nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--error);
+  color: white;
+  font-size: 0.55rem;
+  font-weight: 700;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+}
+
+/* =========================================================
+   BOOKMARKS VIEW
+   ========================================================= */
+.bookmark-source-tag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--saffron);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.6rem;
+}
+
+/* =========================================================
+   SAVE TO FOLDER MODAL
+   ========================================================= */
+.save-folder-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.save-folder-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.save-folder-option input { accent-color: var(--saffron); }
+
+/* =========================================================
+   SHARE CHAPTER MODAL
+   ========================================================= */
+.shared-chapter-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  margin-top: 0.5rem;
+}
+.shared-chapter-icon { font-size: 1.6rem; }
+.shared-chapter-preview strong { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
+.shared-chapter-preview span { font-size: 0.75rem; color: var(--slate); }
+
+.share-chapter-pane { display: none; }
+.share-chapter-pane.active { display: block; }
+
+/* =========================================================
+   RESPONSIVE — INBOX
+   ========================================================= */
+@media (max-width: 600px) {
+  .inbox-item { flex-direction: column; }
+  .inbox-actions { flex-direction: row; flex-wrap: wrap; }
+  .inbox-filter-row { flex-wrap: wrap; }
+}
+/* =========================================================
+   QUESTION NAVIGATOR MODAL
+   ========================================================= */
+.nav-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.8rem;
+  color: var(--slate);
+}
+
+.nav-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.nav-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid var(--line);
+}
+.nav-dot--answered   { background: var(--success, #16a34a); border-color: var(--success, #16a34a); }
+.nav-dot--review     { background: var(--saffron); border-color: var(--saffron); }
+.nav-dot--unanswered { background: var(--paper); }
+.nav-dot--current     { background: transparent; border: 2px solid var(--ink); }
+
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+.nav-grid-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.1s ease;
+}
+.nav-grid-btn:hover { transform: translateY(-1px); }
+
+.nav-grid-btn--answered {
+  background: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+  color: #fff;
+}
+.nav-grid-btn--review {
+  background: var(--saffron-soft, rgba(245, 158, 11, 0.18));
+  border-color: var(--saffron);
+  color: var(--ink);
+}
+.nav-grid-btn--review.nav-grid-btn--answered {
+  background: var(--saffron);
+  border-color: var(--saffron);
+  color: var(--ink);
+}
+.nav-grid-btn--current {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.nav-grid-btn--review::after {
+  content: '🚩';
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 0.65rem;
+}
+
+.nav-summary {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--slate);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.nav-summary strong { color: var(--ink); }
+
+/* End quiz confirm */
+#end-quiz-warning strong { color: var(--saffron); }
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   PROFILE VIEW
+   ========================================================= */
+.profile-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 1.5rem;
+}
+
+.profile-top {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--saffron);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-info { flex: 1; min-width: 160px; }
+.profile-info h3 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.profile-joined { font-size: 0.78rem; color: var(--slate); margin-top: 0.3rem; }
+
+.profile-visibility {
+  min-width: 220px;
+}
+
+.toggle-row--card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  gap: 0.75rem;
+}
+
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+
+.profile-stat-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  box-shadow: var(--shadow-card);
+}
+
+/* Active streak cards get a warm border glow */
+.profile-stat-card--streak-active {
+  border-color: #F5A832;
+  background: linear-gradient(135deg, var(--paper-raised), rgba(245,168,50,0.06));
+}
+.profile-stat-card--streak-active .profile-stat-value {
+  color: #F5A832;
+}
+
+.profile-stat-icon { font-size: 1.3rem; }
+.profile-stat-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.4rem;
+  color: var(--ink);
+}
+.profile-stat-label {
+  font-size: 0.75rem;
+  color: var(--slate);
+}
+
+.profile-section {
+  margin-bottom: 1.75rem;
+}
+
+.contribution-calendar-wrap {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.contribution-months {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 14px;
+  gap: 3px;
+  margin-left: 28px;
+  font-size: 0.68rem;
+  color: var(--slate);
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+}
+
+.contribution-body {
+  display: flex;
+  gap: 6px;
+}
+
+.contribution-day-labels {
+  display: grid;
+  grid-template-rows: repeat(7, 14px);
+  gap: 3px;
+  font-size: 0.62rem;
+  color: var(--slate);
+  text-align: right;
+  width: 28px;
+  flex-shrink: 0;
+}
+.contribution-day-labels span:nth-child(1) { grid-row: 2; }
+.contribution-day-labels span:nth-child(2) { grid-row: 4; }
+.contribution-day-labels span:nth-child(3) { grid-row: 6; }
+
+.contribution-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 14px);
+  grid-auto-columns: 14px;
+  gap: 3px;
+}
+
+.contribution-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--line);
+  border: 1px solid transparent;
+}
+
+.contribution-cell[data-level="0"] { background: var(--line); }
+.contribution-cell[data-level="1"] { background: var(--success-soft); }
+.contribution-cell[data-level="2"] { background: #9fd4af; }
+.contribution-cell[data-level="3"] { background: var(--success); }
+.contribution-cell[data-level="4"] { background: #1f6b3b; }
+
+.contribution-cell--target {
+  border: 2px solid var(--saffron);
+}
+
+.contribution-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--slate);
+  flex-wrap: wrap;
+}
+
+.contribution-legend-label { margin: 0 0.15rem; }
+
+.contribution-legend-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 1rem;
+}
+
+@media (max-width: 600px) {
+  .profile-top { flex-direction: column; align-items: stretch; text-align: center; }
+  .profile-visibility { width: 100%; }
+}
+
+/* =========================================================
+   VISIBILITY (PUBLIC LIBRARY) TOGGLE
+   ========================================================= */
+.visibility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--line);
+}
+
+.visibility-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--slate);
+}
+
+.visibility-badge--public {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* =========================================================
+   PUBLIC LIBRARY (Profile)
+   ========================================================= */
+.public-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.public-lib-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.public-lib-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+}
+
+.public-lib-type {
+  font-weight: 700;
+  color: var(--slate);
+}
+
+.public-lib-card h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.public-lib-owner {
+  font-size: 0.78rem;
+  color: var(--slate);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.public-lib-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.btn-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.btn-like.liked {
+  color: var(--error);
+  border-color: var(--error-soft);
+  background: var(--error-soft);
+}
+
+.public-library-empty {
+  font-size: 0.85rem;
+  color: var(--slate);
+  margin-top: 0.75rem;
+}
+
+/* =========================================================
+   GLOBAL SEARCH BAR
+   ========================================================= */
+.global-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.global-search-bar input {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 0.75rem 0;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.global-search-bar input:focus { outline: none; }
+
+.global-search-results {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  z-index: 60;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.global-search-bar input:focus ~ .global-search-results,
+.global-search-results:hover { display: block; }
+
+.global-search-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate);
+  padding: 0.6rem 1rem 0.3rem;
+}
+
+.global-search-empty {
+  padding: 1rem;
+  font-size: 0.85rem;
+  color: var(--slate);
+  text-align: center;
+}
+
+.global-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.global-search-item:last-child { border-bottom: none; }
+.global-search-item:hover { background: var(--paper); }
+
+.global-search-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.global-search-item-text strong {
+  display: block;
+  font-size: 0.88rem;
+}
+.global-search-item-text span {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--slate);
+}
+
+.global-search-item-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--slate);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* =========================================================
+   PIN BUTTON — Folders & Quizzes
+   ========================================================= */
+.folder-card-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-pin {
+  background: none;
+  border: none;
+  padding: 0.2rem;
+  font-size: 1rem;
+  opacity: 0.3;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-pin:hover { opacity: 0.7; transform: rotate(-15deg); }
+
+.btn-pin.active {
+  opacity: 1;
+  filter: none;
+}
+
+/* Pinned folder card — gold top border */
+.folder-card--pinned {
+  border-top: 3px solid var(--saffron);
+  position: relative;
+}
+
+.folder-card--pinned::before {
+  content: "PINNED";
+  position: absolute;
+  top: -1px;
+  right: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  background: var(--saffron);
+  color: var(--ink);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0 0 4px 4px;
+}
+
+.quiz-slip-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Pinned quizzes get left border in green */
+.quiz-slip--pinned {
+  border-left-color: var(--success);
+  position: relative;
+}
+
+.quiz-slip--pinned::after {
+  content: "📌";
+  position: absolute;
+  top: 0.75rem;
+  right: 0.85rem;
+  font-size: 0.85rem;
+}
+
+/* =========================================================
+   DAILY NOTES VIEW
+   ========================================================= */
+.note-composer {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--saffron);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-card);
+}
+
+.note-composer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.note-date-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--saffron);
+}
+
+.note-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.note-textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  resize: vertical;
+  min-height: 110px;
+  transition: border-color 0.15s ease;
+}
+
+.note-textarea:focus {
+  outline: 2px solid var(--saffron);
+  outline-offset: 1px;
+  border-color: var(--saffron);
+}
+
+.note-textarea::placeholder { color: var(--slate); }
+
+.note-composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.85rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.note-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.note-attach-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--slate);
+}
+
+/* Tag picker dropdown */
+.note-tag-picker {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow-card);
+}
+
+.note-tag-picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.btn-icon-close {
+  background: none;
+  border: none;
+  font-size: 0.85rem;
+  color: var(--slate);
+  cursor: pointer;
+  padding: 0.2rem;
+}
+.btn-icon-close:hover { color: var(--ink); }
+
+.note-tag-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.note-tag-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.note-tag-option:hover {
+  background: var(--saffron-soft);
+  border-color: var(--saffron);
+}
+
+.note-tag-option.selected {
+  background: var(--saffron-soft);
+  border-color: var(--saffron);
+  font-weight: 600;
+}
+
+.tag-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--slate);
+  background: var(--paper);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+/* Notes list */
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.note-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.12s ease;
+}
+
+.note-card:hover { transform: translateY(-1px); }
+
+.note-card--today {
+  border-left: 4px solid var(--saffron);
+  background: linear-gradient(135deg, var(--paper-raised) 0%, #fffdf8 100%);
+}
+
+.note-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.note-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.note-card-day {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--saffron);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.note-card-date {
+  font-size: 0.75rem;
+  color: var(--slate);
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.note-card-body {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--ink);
+  margin-bottom: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.note-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.note-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+}
+
+.note-tag-chip--folder {
+  background: var(--saffron-soft);
+  color: #9A5C0A;
+  border: 1px solid rgba(232,147,46,0.3);
+}
+
+.note-tag-chip--quiz {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid rgba(62,142,90,0.25);
+}
+
+.notes-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--slate);
+}
+
+.notes-empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+
+/* Dark mode overrides for new features */
+[data-theme="dark"] .note-composer { background: var(--paper-raised); }
+[data-theme="dark"] .note-textarea { background: var(--paper); color: var(--ink); }
+[data-theme="dark"] .note-tag-option { background: transparent; }
+[data-theme="dark"] .note-tag-option:hover { background: rgba(245,168,50,0.08); }
+
+/* =========================================================
+   MOBILE NOTES ADJUSTMENTS
+   ========================================================= */
+@media (max-width: 700px) {
+  .note-composer-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .note-composer-footer .btn--primary {
+    align-self: flex-end;
+  }
+  .note-attach-row { width: 100%; }
+}
+
+/* =========================================================
+   PINNED QUICK-ACCESS STRIP
+   ========================================================= */
+.pinned-strip-wrap {
+  margin-bottom: 1.5rem;
+  display: none; /* hidden until there are pins */
+}
+.pinned-strip-wrap.has-pins { display: block; }
+
+.pinned-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.pinned-strip-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--saffron);
+}
+
+.pinned-strip-hint {
+  font-size: 0.68rem;
+  color: var(--slate);
+}
+
+.pinned-strip {
+  display: flex;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  /* hide scrollbar visually but keep functional */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.pinned-strip::-webkit-scrollbar { height: 4px; }
+.pinned-strip::-webkit-scrollbar-track { background: transparent; }
+.pinned-strip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* Each pin chip */
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem 0.6rem 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  max-width: 220px;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.15s, transform 0.12s;
+  text-align: left;
+  font-family: inherit;
+  user-select: none;
+}
+
+.pin-chip:hover {
+  border-color: var(--saffron);
+  transform: translateY(-1px);
+}
+
+.pin-chip--folder { border-left: 3px solid var(--saffron); }
+.pin-chip--quiz   { border-left: 3px solid var(--success); }
+
+.pin-chip-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+.pin-chip-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.pin-chip-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+
+.pin-chip-meta {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--slate);
+}
+
+.pin-chip-remove {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+  color: var(--slate);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-left: 0.15rem;
+  transition: color 0.12s, background 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pin-chip-remove:hover { color: var(--error); background: var(--error-soft); }
+
+.pin-strip-empty {
+  font-size: 0.82rem;
+  color: var(--slate);
+  padding: 0.5rem 0;
+  display: flex;
+  align-items: center;
+}
+
+/* =========================================================
+   MOBILE OVERHAUL — comprehensive fixes
+   ========================================================= */
+
+/* Mobile topbar — fixed: always dark, not var(--ink) which inverts in dark mode */
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  background: #1B2A4A;
+  color: #FAF6EE;
+  padding: 0.7rem 1rem;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+[data-theme="dark"] .mobile-topbar {
+  background: #0D1018;
+}
+
+/* Bottom nav — 5 items, icons + labels */
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  background: var(--paper-raised);
+  border-top: 1px solid var(--line);
+  display: none;
+  align-items: stretch;
+  z-index: 70;
+  box-shadow: 0 -4px 20px rgba(27,42,74,0.08);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.mobile-nav .nav-link {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.25rem;
+  font-size: 0.6rem;
+  color: var(--slate);
+  background: none;
+  border-radius: 0;
+  position: relative;
+}
+
+.mobile-nav .nav-link .nav-icon { font-size: 1.2rem; line-height: 1; }
+.mobile-nav .nav-link span:not(.nav-icon):not(.mobile-nav-badge) { font-size: 0.62rem; font-weight: 600; }
+
+.mobile-nav .nav-link.active {
+  color: var(--saffron);
+  background: none;
+}
+.mobile-nav .nav-link.active .nav-icon { filter: drop-shadow(0 0 4px rgba(232,147,46,0.5)); }
+
+.mobile-nav-badge {
+  position: absolute;
+  top: 0.3rem;
+  right: calc(50% - 14px);
+  background: var(--error);
+  color: #fff;
+  font-size: 0.55rem;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+/* Sidebar backdrop */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 75;
+}
+.sidebar-backdrop.active { display: block; }
+
+/* ── 880px breakpoint — tablet/mobile ── */
+/* right  */
+@media (max-width: 880px) {
+
+  .mobile-topbar{
+    display:flex;
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    z-index:70;
+  }
+
+  .main{
+    width:100%;
+    max-width:100%;
+    margin-left:0;
+    padding:4rem 1rem 5.5rem;
+    box-sizing:border-box;
+  }
+
+}
+@media (max-width: 880px) {
+  .mobile-nav { display: flex; }
+
+  .sidebar {
+    position: fixed;
+    left: -260px;
+    top: 0; bottom: 0;
+    width: 240px;
+    z-index: 80;
+    transition: left 0.26s cubic-bezier(0.4,0,0.2,1);
+  }
+  .sidebar.open { left: 0; }
+  .sidebar-close { display: block; }
+
+  /* main gets top padding (topbar) + bottom (nav) */
+ 
+
+  .view-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .view-header .btn,
+  .view-header > .btn--primary {
+    width: fit-content;
+    text-align: center;
+  }
+
+  .folder-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    display: grid;
+  }
+
+  .folder-card { padding: 1rem; }
+  .folder-card h3 { font-size: 0.95rem; }
+
+  .pinned-strip-wrap { margin-bottom: 1.25rem; }
+  .pin-chip { max-width: 190px; }
+
+  .quiz-slip { padding: 0.9rem 1rem; }
+  .quiz-slip-actions { flex-wrap: wrap; gap: 0.4rem; }
+  .quiz-slip-actions .btn { flex: 1 1 auto; min-width: 70px; text-align: center; }
+
+  .folder-header-actions { flex-wrap: wrap; width: 100%; }
+  .folder-header-actions .btn { flex: 1; text-align: center; }
+
+  /* Global search bar */
+  .global-search-bar { margin-bottom: 1rem; }
+
+  /* Create view */
+  .create-grid { grid-template-columns: 1fr; }
+
+  /* Inbox */
+  .inbox-item { flex-direction: column; gap: 0.75rem; }
+  .inbox-actions { flex-direction: row; flex-wrap: wrap; }
+  .inbox-actions .btn { flex: 1; text-align: center; }
+
+  /* Share modal */
+  .share-tabs { flex-wrap: wrap; }
+
+  /* Setup card */
+  .setup-grid { grid-template-columns: 1fr; }
+
+  /* Friends */
+  .friend-search-bar { max-width: 100%; }
+  .groups-grid { grid-template-columns: 1fr 1fr; }
+  .friend-row-actions { flex-direction: column; gap: 0.3rem; }
+
+  /* History */
+  .history-filters { flex-wrap: wrap; }
+
+  /* Flashcards */
+  .flash-grid { grid-template-columns: 1fr; }
+
+  /* Quiz player */
+  .player-wrap { padding: 1rem; }
+  .options-list { gap: 0.6rem; }
+
+  /* Notes */
+  .note-composer-footer { flex-direction: column; align-items: flex-start; }
+  .note-composer-footer .btn--primary { align-self: flex-end; }
+  .note-attach-row { width: 100%; flex-wrap: wrap; }
+
+  /* Modal */
+  .modal-card { padding: 1.25rem; margin: 1rem; }
+  .modal-card--wide { max-width: 100%; }
+}
+
+/* ── 480px breakpoint — small phones ── */
+@media (max-width: 480px) {
+  .main { padding: 0.85rem 0.75rem 5.5rem; }
+
+  .view-header h2 { font-size: 1.4rem; }
+
+  .folder-grid { grid-template-columns: 1fr ; gap: 0.6rem; }
+  .folder-card { padding: 0.85rem; }
+  .folder-card h3 { font-size: 0.88rem; }
+  .folder-count { font-size: 0.65rem; }
+
+  .pin-chip { max-width: 175px; }
+  .pin-chip-name { max-width: 100px; }
+
+  /* Quiz player full-screen feel */
+  .quiz-player-head { flex-wrap: wrap; gap: 0.5rem; }
+  .player-progress { order: 3; width: 100%; }
+
+  .groups-grid { grid-template-columns: 1fr; }
+  .backup-actions { flex-direction: column; }
+  .leaderboard-row { flex-wrap: wrap; gap: 0.4rem; }
+
+  /* Auth card */
+  .auth-card { padding: 1.75rem 1.25rem; }
+
+  /* Profile stats */
+  .profile-stats-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Pinned strip chips — shorter on tiny screens */
+  .pinned-strip { gap: 0.5rem; }
+
+  /* Notes */
+  .note-card { padding: 0.9rem 1rem; }
+  .note-card-tags { gap: 0.3rem; }
+  .note-tag-chip { font-size: 0.68rem; padding: 0.2rem 0.5rem; }
+
+  /* Modal */
+  .modal-card { padding: 1rem 0.9rem; margin: 0.5rem; }
+  .modal-actions { flex-direction: column; }
+  .modal-actions .btn { width: 100%; text-align: center; }
+}
+.section-subhead {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-soft, #888);
+  margin: 1.25rem 0 0.5rem;
+}
+
+#add-question-json {
+  min-height: 320px;
+  resize: vertical;
+}
+
+.friend-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.friend-profile-head h3 { margin: 0; }
+.friend-profile-head .friend-avatar { width: 56px; height: 56px; font-size: 1.3rem; flex-shrink: 0; }
+
+.friend-card { cursor: pointer; }
+/* =============================================
+   POMODORO STYLES
+   ============================================= */
+
+/* Shell */
+.pomo-shell {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--paper); display: flex; flex-direction: column; overflow: hidden;
+}
+.pomo-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.65rem 1rem; background: var(--paper-raised);
+  border-bottom: 1px solid var(--line); gap: 0.75rem; flex-shrink: 0;
+}
+.pomo-topbar-left  { display: flex; align-items: center; gap: 0.75rem; flex: 1; }
+.pomo-topbar-right { display: flex; align-items: center; gap: 0.4rem; }
+.pomo-phase-tag {
+  font-size: 0.78rem; font-weight: 700; color: #fff;
+  padding: 0.25rem 0.65rem; border-radius: 20px; background: #4a6fa5;
+}
+.pomo-section-info { font-size: 0.8rem; color: var(--slate); }
+.pomo-timer-pill {
+  font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700;
+  background: var(--paper); border: 1px solid var(--line);
+  padding: 0.3rem 0.75rem; border-radius: 8px; min-width: 72px; text-align: center;
+}
+.pomo-timer-warn { color: var(--error) !important; border-color: var(--error) !important; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+.pomo-ctrl-btn {
+  width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--paper); cursor: pointer; font-size: 0.9rem;
+  display: flex; align-items: center; justify-content: center; transition: all 0.12s;
+}
+.pomo-ctrl-btn:hover { border-color: var(--saffron); background: var(--saffron-soft); }
+.pomo-ctrl-danger:hover { border-color: var(--error); background: var(--error-soft); }
+.pomo-progress-bar-wrap { height: 3px; background: var(--line); flex-shrink: 0; }
+.pomo-progress-fill { height: 100%; background: var(--saffron); transition: width 0.5s ease; }
+.pomo-body { flex: 1; overflow-y: auto; padding: 1rem; }
+
+/* Setup dialog */
+.pomo-setup-dialog { max-width: 520px; }
+.pomo-setup-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem; }
+.pomo-setup-title  { font-size: 1.15rem; font-weight: 700; }
+.pomo-setup-subtitle { font-size: 0.8rem; color: var(--slate); }
+.pomo-stats-row    { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.pomo-stat-chip    { font-size: 0.78rem; padding: 0.25rem 0.65rem; border-radius: 20px; background: var(--paper); border: 1px solid var(--line); }
+.pomo-section-block { margin-bottom: 1rem; }
+.pomo-section-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate); margin-bottom: 0.5rem; }
+.pomo-range-row    { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.pomo-range-field  { display: flex; flex-direction: column; gap: 0.2rem; }
+.pomo-range-field label { font-size: 0.7rem; color: var(--slate); }
+.pomo-range-field input { width: 70px; padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); }
+.pomo-range-sep    { color: var(--slate); }
+.pomo-count-pill   { font-size: 0.75rem; color: var(--slate); padding: 0.2rem 0.5rem; border-radius: 12px; background: var(--paper-raised); border: 1px solid var(--line); }
+.pomo-sliders-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+.pomo-slider-item  { display: flex; flex-direction: column; gap: 0.35rem; }
+.pomo-slider-label { font-size: 0.75rem; color: var(--slate); }
+.pomo-slider-row   { display: flex; align-items: center; gap: 0.5rem; }
+.pomo-range        { flex: 1; accent-color: var(--saffron); }
+.pomo-slider-val   { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; min-width: 24px; text-align: right; }
+.pomo-toggles      { margin-bottom: 0.75rem; }
+.pomo-toggle-label { display: flex; align-items: center; gap: 0.65rem; cursor: pointer; font-size: 0.85rem; }
+.pomo-toggle-track {
+  width: 36px; height: 20px; background: var(--line-strong); border-radius: 10px;
+  position: relative; flex-shrink: 0; transition: background 0.2s;
+}
+input:checked + .pomo-toggle-track { background: var(--saffron); }
+.pomo-toggle-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; transition: transform 0.2s;
+}
+input:checked + .pomo-toggle-track .pomo-toggle-thumb { transform: translateX(16px); }
+input[type="checkbox"] { display: none; }
+
+/* Flashcards */
+.pomo-study-wrap   { max-width: 1200px; margin: 0 auto; }
+.pomo-study-toolbar{ display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.pomo-study-title  { font-weight: 700; font-size: 0.95rem; flex: 1; }
+.pomo-study-meta   { font-size: 0.78rem; color: var(--slate); }
+.pomo-flashcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.pomo-flashcard    { height: 260px; perspective: 1000px; cursor: pointer; }
+.pomo-flashcard-inner {
+  width: 100%; height: 100%; position: relative;
+  transform-style: preserve-3d; transition: transform 0.4s ease;
+}
+.pomo-flashcard.flipped .pomo-flashcard-inner { transform: rotateY(180deg); }
+.pomo-flashcard-face {
+  position: absolute; inset: 0; backface-visibility: hidden;
+  border-radius: var(--radius-md); border: 1px solid var(--line);
+  background: var(--paper-raised); padding: 1rem;
+  display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden;
+}
+.pomo-flashcard-back { transform: rotateY(180deg); background: #1B2A4A; color: #EDE6D8; border-color: #1B2A4A; }
+.pomo-fc-num       { font-family: var(--font-mono); font-size: 0.7rem; color: var(--slate); }
+.pomo-fc-question  { font-size: 0.88rem; font-weight: 600; line-height: 1.5; flex: 1; }
+.pomo-fc-options   { display: flex; flex-direction: column; gap: 0.2rem; }
+.pomo-fc-option    { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--ink-soft); }
+.pomo-fc-correct   { color: var(--success); font-weight: 700; }
+.pomo-fc-letter    { font-weight: 700; font-size: 0.7rem; width: 16px; flex-shrink: 0; }
+.pomo-fc-hint      { font-size: 0.68rem; color: var(--slate); text-align: center; margin-top: auto; }
+.pomo-fc-answer-label { font-size: 0.75rem; color: rgba(237,230,216,0.6); }
+.pomo-fc-answer-text  { font-size: 1rem; font-weight: 700; color: #EDE6D8; }
+.pomo-fc-explanation  { font-size: 0.78rem; color: rgba(237,230,216,0.75); line-height: 1.5; }
+
+/* Quiz */
+.pomo-quiz-wrap    { max-width: 600px; margin: 0 auto; }
+.pomo-phase-heading{ display: flex; align-items: center; gap: 0.85rem; margin-bottom: 1.25rem; }
+.pomo-phase-icon   { font-size: 2rem; }
+.pomo-phase-title  { font-size: 1.1rem; font-weight: 700; }
+.pomo-phase-sub    { font-size: 0.8rem; color: var(--slate); }
+.pomo-q-progress   { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+.pomo-q-bar        { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.pomo-q-fill       { height: 100%; background: var(--saffron); transition: width 0.3s ease; border-radius: 3px; }
+.pomo-q-progress span { font-family: var(--font-mono); font-size: 0.78rem; color: var(--slate); flex-shrink: 0; }
+.pomo-question-card{ background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 1.5rem; }
+.pomo-question-text{ font-size: 1rem; font-weight: 600; line-height: 1.6; margin-bottom: 1.25rem; }
+.pomo-options      { display: flex; flex-direction: column; gap: 0.6rem; }
+.pomo-opt-btn {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--paper); text-align: left; cursor: pointer; width: 100%;
+  transition: all 0.12s; font-size: 0.9rem; color: var(--ink);
+}
+.pomo-opt-btn:hover:not(:disabled) { border-color: var(--saffron); background: var(--saffron-soft); }
+.pomo-opt-letter { font-weight: 700; font-size: 0.8rem; width: 22px; height: 22px; border-radius: 50%; background: var(--line); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pomo-correct { border-color: var(--success) !important; background: rgba(39,174,96,0.1) !important; }
+.pomo-wrong   { border-color: var(--error)   !important; background: rgba(231,76,60,0.1)  !important; }
+
+/* Results & Break */
+.pomo-results-wrap  { max-width: 520px; margin: 0 auto; }
+.pomo-score-card    { border-radius: var(--radius-md); padding: 1.5rem; text-align: center; margin-bottom: 1.25rem; border: 1px solid var(--line); }
+.pomo-grade-great   { background: rgba(39,174,96,0.08); border-color: rgba(39,174,96,0.3); }
+.pomo-grade-good    { background: rgba(243,156,18,0.08); border-color: rgba(243,156,18,0.3); }
+.pomo-grade-review  { background: rgba(231,76,60,0.08);  border-color: rgba(231,76,60,0.3); }
+.pomo-score-icon    { font-size: 2rem; margin-bottom: 0.5rem; }
+.pomo-score-big     { font-size: 1.8rem; font-weight: 900; font-family: var(--font-mono); }
+.pomo-score-acc     { font-size: 0.9rem; color: var(--slate); margin-top: 0.25rem; }
+.pomo-incorrect-list{ background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; }
+.pomo-incorrect-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.65rem; }
+.pomo-incorrect-item  { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.pomo-incorrect-item:last-child { border-bottom: none; }
+.pomo-inc-q  { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.2rem; }
+.pomo-inc-ans{ font-size: 0.78rem; color: var(--success); }
+.pomo-perfect { text-align: center; padding: 1.5rem; color: var(--slate); }
+.pomo-results-actions { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+.pomo-pause-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; cursor: pointer;
+}
+.pomo-pause-msg {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.75rem; text-align: center;
+}
+.pomo-pause-icon  { font-size: 2.5rem; }
+.pomo-pause-title { color: #fff; font-size: 1.4rem; font-weight: 800; }
+.pomo-resume-btn  { min-width: 140px; font-size: 1rem; padding: 0.6rem 1.5rem; }
+.pomo-pause-hint  { color: rgba(255,255,255,0.5); font-size: 0.75rem; }
+
+/* Break */
+.pomo-break-wrap  { max-width: 440px; margin: 0 auto; text-align: center; }
+.pomo-break-icon  { font-size: 4rem; margin-bottom: 0.5rem; }
+.pomo-break-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.25rem; }
+.pomo-break-sub   { color: var(--slate); margin-bottom: 1.25rem; }
+.pomo-break-tips  { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-bottom: 1.25rem; }
+.pomo-tip         { font-size: 0.82rem; padding: 0.35rem 0.75rem; border-radius: 20px; background: var(--paper-raised); border: 1px solid var(--line); }
+.pomo-prev-results{ display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.25rem; }
+.pomo-prev-item   { display: flex; align-items: center; gap: 0.6rem; font-size: 0.78rem; }
+.pomo-prev-bar    { flex: 1; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.pomo-break-actions { display: flex; justify-content: center; }
+
+/* Finish */
+.pomo-finish-wrap   { max-width: 520px; margin: 0 auto; text-align: center; }
+.pomo-finish-icon   { font-size: 3.5rem; margin-bottom: 0.5rem; }
+.pomo-finish-title  { font-size: 1.4rem; font-weight: 800; margin-bottom: 0.25rem; }
+.pomo-finish-sub    { color: var(--slate); margin-bottom: 1.5rem; }
+.pomo-final-stats   { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
+.pomo-final-stat    { background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 1rem 1.5rem; }
+.pomo-final-val     { font-size: 1.4rem; font-weight: 900; font-family: var(--font-mono); color: var(--saffron); }
+.pomo-final-lbl     { font-size: 0.72rem; color: var(--slate); margin-top: 0.2rem; }
+.pomo-breakdown     { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.5rem; text-align: left; }
+.pomo-breakdown-item{ display: flex; align-items: center; gap: 0.65rem; font-size: 0.8rem; }
+.pomo-breakdown-bar { flex: 1; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.pomo-breakdown-bar div { height: 100%; border-radius: 4px; }
+.pomo-breakdown-item.great div { background: var(--success); }
+.pomo-breakdown-item.good  div { background: #f39c12; }
+.pomo-breakdown-item.review div{ background: var(--error); }
+.pomo-finish-actions { display: flex; gap: 0.75rem; justify-content: center; }
+
+@media (max-width: 520px) {
+  .pomo-sliders-grid { grid-template-columns: 1fr; }
+  .pomo-flashcard-grid { grid-template-columns: 1fr; }
+  .pomo-final-stats { flex-direction: column; align-items: center; }
+}
+/* ── FOLDER CARD REDESIGN ─────────────────────────────── */
+.folder-card {
+  width: 200px;
+  min-height: unset !important;
+  padding: 1rem 1.1rem 0.85rem !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  border-radius: 12px !important;
+}
+
+.folder-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+/* Hide Make Public/Private button — replace with small icon */
+.btn-toggle-visibility {
+  font-size: 0.7rem !important;
+  padding: 2px 7px !important;
+  border-radius: 20px !important;
+  border: 1px solid var(--line) !important;
+  background: transparent !important;
+  color: var(--slate) !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.folder-card h3 {
+  font-size: 0.95rem !important;
+  margin: 4px 0 4px !important;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.folder-count {
+  font-size: 0.72rem !important;
+  margin-bottom: 8px;
+}
+
+/* Group select — compact */
+.folder-group-select {
+  font-size: 0.72rem !important;
+  padding: 3px 6px !important;
+  margin-bottom: 8px;
+  border-radius: 6px !important;
+  opacity: 0.7;
+}
+.folder-group-select:hover, .folder-group-select:focus { opacity: 1; }
+
+/* Actions row — icon only delete, text rename */
+.folder-card-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 6px !important;
+}
+.folder-card-actions .btn-rename-folder {
+  flex: 1;
+  font-size: 0.72rem !important;
+  padding: 3px 8px !important;
+}
+.folder-card-actions .btn-delete-folder {
+  font-size: 0.72rem !important;
+  padding: 3px 8px !important;
+}
+
+/* Visibility badge — bottom strip */
+.visibility-badge {
+  font-size: 0.68rem !important;
+  padding: 2px 8px !important;
+  border-radius: 20px !important;
+  align-self: flex-start;
+  background: rgba(255,255,255,0.05) !important;
+  border: 1px solid var(--line) !important;
+}
+.visibility-badge--public {
+  background: rgba(34,197,94,0.1) !important;
+  border-color: rgba(34,197,94,0.3) !important;
+  color: #4ade80 !important;
+}
+
+/* ── FOLDER GROUPS LAYOUT ─────────────────────────────── */
+#folder-grid { display: grid !important; }
+#folder-grid:has(.folder-group-section) { display: block !important; }
+
+.folder-group-section { margin-bottom: 28px; }
+
+.folder-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--line);
+}
+
+.folder-group-title {
+  font-size: 0.78rem !important;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #7c3aed);
+  margin: 0;
+  flex: 1;
+}
+
+.folder-group-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.btn-delete-group {
+  font-size: 0.7rem !important;
+  padding: 2px 8px !important;
+  opacity: 0.5;
+}
+.btn-delete-group:hover { opacity: 1; }
+/* ── FULL WIDTH LAYOUT (sidebar removed) ── */
+.main {
+  margin-left: 0 !important;
+  max-width: 100% !important;
+  padding: 1.5rem 2rem 5.5rem !important;
+}
+.sidebar {
+  display: none !important;
+}
+.sidebar.open {
+  display: flex !important;
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  height: 100vh;
+  width: 240px;
+  z-index: 80;
+  transform: translateX(0);
+}
+.app-shell:not([style*="display: none"]):not([style*="display:none"]) .mobile-topbar { display: flex !important; }
+.hamburger { display: flex !important; }
+.app-shell:not([style*="display: none"]):not([style*="display:none"]) { display: block !important; }
+.app-shell:not([style*="display: none"]):not([style*="display:none"]) .mobile-nav {
+  display: flex !important;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--paper-raised);
+  border-top: 1px solid var(--line);
+  z-index: 60;
+}
+
+/* ── FLASHCARD SCROLL (invisible scrollbar) ── */
+.flash-card-face {
+  overflow-y: auto;
+  max-height: 70vh;
+}
+.flash-card-face::-webkit-scrollbar,
+.flash-card-back::-webkit-scrollbar { width: 0; background: transparent; }
+.flash-card-face, .flash-card-back { scrollbar-width: none; }
+
+/* ── COLLAPSIBLE GROUPS ── */
+.folder-group-header { cursor: pointer; user-select: none; }
+.folder-group-chevron {
+  font-size: 0.65rem;
+  color: var(--slate);
+  transition: transform 0.25s ease;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.folder-group-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+  max-height: 2000px;
+  opacity: 1;
+}
+.folder-group-grid.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  margin: 0; padding: 0;
+}
+/* ── New Folder Group button — match nav-link style ── */
+#btn-create-group {
+  display: flex !important;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem !important;
+  border-radius: var(--radius-sm) !important;
+  color: rgba(237,230,216,0.7) !important;
+  background: transparent !important;
+  border: none !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  width: 100% !important;
+  text-align: left !important;
+  cursor: pointer;
+  margin: 0 !important;
+  transition: all 0.15s ease;
+}
+#btn-create-group:hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: #EDE6D8 !important;
+}
+/* =========================================================
+   UI IMPROVEMENTS - SIDEBAR, QUIZ PLAYER, RESULT, INBOX
+   ========================================================= */
+
+/* ── SIDEBAR REFRESH ── */
+.sidebar {
+  width: 240px !important;
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%) !important;
+  border-right: 1px solid rgba(255,255,255,0.06) !important;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.25) !important;
+}
+
+.sidebar-top {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 1rem !important;
+}
+
+.sidebar-title {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  color: #f9f7f2 !important;
+}
+
+.sidebar-nav {
+  gap: 2px !important;
+}
+
+.nav-section-label {
+  font-size: 0.62rem !important;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.28) !important;
+  padding: 0.75rem 0.85rem 0.3rem !important;
+  margin-top: 0.25rem;
+}
+
+.nav-link {
+  padding: 0.52rem 0.85rem !important;
+  border-radius: 8px !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  color: rgba(237,230,216,0.6) !important;
+  transition: all 0.13s ease !important;
+  gap: 0.65rem !important;
+}
+
+.nav-link:hover {
+  background: rgba(255,255,255,0.07) !important;
+  color: #f9f7f2 !important;
+}
+
+.nav-link.active {
+  background: linear-gradient(135deg, rgba(232,147,46,0.2), rgba(232,147,46,0.1)) !important;
+  color: #f5a524 !important;
+  border: 1px solid rgba(232,147,46,0.25) !important;
+  font-weight: 600 !important;
+}
+
+.nav-icon {
+  font-size: 0.95rem !important;
+  width: 1.1rem !important;
+  opacity: 0.9;
+}
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--saffron);
+  color: #1a1200;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+}
+
+.nav-badge--race {
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  color: white;
+}
+
+.user-badge {
+  background: rgba(232,147,46,0.07) !important;
+  border: 1px solid rgba(232,147,46,0.2) !important;
+  border-radius: 10px !important;
+  padding: 0.6rem 0.85rem !important;
+}
+
+.rollno-value {
+  color: #f5a524 !important;
+  font-weight: 700;
+}
+
+.user-name {
+  font-size: 0.82rem !important;
+  color: #f9f7f2 !important;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid rgba(255,255,255,0.06) !important;
+  gap: 0.6rem !important;
+}
+
+.brand-mark {
+  background: linear-gradient(135deg, #f5a524, #e8932e) !important;
+  color: #111 !important;
+  font-weight: 900 !important;
+  border-radius: 8px !important;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.05em;
+  padding: 3px 6px !important;
+}
+
+/* ── QUIZ PLAYER REFRESH ── */
+.player-wrap {
+  max-width: 700px !important;
+  margin: 0 auto;
+}
+
+.player-header {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  margin-bottom: 1rem !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.player-progress {
+  font-size: 0.9rem !important;
+  font-weight: 700;
+  color: var(--ink) !important;
+  background: var(--saffron-soft);
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(232,147,46,0.3);
+}
+
+.progress-track {
+  height: 4px !important;
+  border-radius: 2px !important;
+  margin-bottom: 1.25rem !important;
+  background: var(--line) !important;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #f5a524, #e8932e) !important;
+  border-radius: 2px;
+}
+
+.question-card {
+  border-radius: 14px !important;
+  padding: 1.75rem !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07) !important;
+}
+
+.question-tag {
+  font-size: 0.7rem !important;
+  letter-spacing: 0.12em !important;
+  color: var(--saffron) !important;
+  background: var(--saffron-soft);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.question-text {
+  font-size: 1.15rem !important;
+  line-height: 1.6 !important;
+  margin-bottom: 1.35rem !important;
+  color: var(--ink);
+}
+
+.options-list {
+  gap: 0.5rem !important;
+}
+
+.option-item {
+  padding: 0.8rem 1rem !important;
+  border-radius: 10px !important;
+  border: 1.5px solid var(--line) !important;
+  transition: all 0.13s ease !important;
+}
+
+.option-item:hover {
+  border-color: var(--saffron) !important;
+  background: var(--saffron-soft) !important;
+  transform: translateX(2px);
+}
+
+.option-item.selected {
+  border-color: var(--saffron) !important;
+  background: var(--saffron-soft) !important;
+}
+
+.option-marker {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 8px !important;
+  background: var(--paper) !important;
+  border: 1.5px solid var(--line);
+  font-size: 0.75rem !important;
+  font-weight: 800 !important;
+  color: var(--ink-soft);
+}
+
+.option-item.selected .option-marker {
+  background: var(--saffron) !important;
+  border-color: var(--saffron) !important;
+  color: #111 !important;
+}
+
+.option-item.correct .option-marker {
+  background: var(--success) !important;
+  border-color: var(--success) !important;
+  color: white !important;
+}
+
+.option-item.incorrect .option-marker {
+  background: var(--error) !important;
+  border-color: var(--error) !important;
+  color: white !important;
+}
+
+.option-text {
+  font-size: 0.92rem !important;
+  font-weight: 500;
+}
+
+.player-footer {
+  padding: 0.75rem 0;
+  gap: 0.75rem !important;
+}
+
+/* ── RESULT SCREEN REFRESH ── */
+.result-wrap {
+  max-width: 720px !important;
+}
+
+.result-head {
+  margin-bottom: 1.25rem !important;
+}
+
+.result-head h2 {
+  font-size: 1.5rem !important;
+  font-weight: 700;
+}
+
+.result-summary {
+  gap: 1.5rem !important;
+  padding: 1.5rem !important;
+  border-radius: 14px !important;
+  background: var(--paper-raised) !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07) !important;
+}
+
+.score-ring {
+  width: 100px !important;
+  height: 100px !important;
+  border-radius: 50% !important;
+  border: 3px solid var(--saffron) !important;
+  background: var(--ink) !important;
+  box-shadow: 0 0 0 6px rgba(232,147,46,0.1);
+}
+
+.score-value {
+  font-size: 1.6rem !important;
+}
+
+.result-stats {
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)) !important;
+  gap: 0.75rem !important;
+}
+
+.stat-item {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  gap: 0.1rem !important;
+}
+
+.stat-num {
+  font-size: 1.3rem !important;
+}
+
+.stat-label {
+  font-size: 0.65rem !important;
+}
+
+.result-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+
+/* ── INBOX REFRESH ── */
+/* inbox filter — keep original grouped pill look, just active color */
+.inbox-filter-row .seg-btn.active {
+  background: var(--saffron) !important;
+  color: #111 !important;
+}
+
+.inbox-list {
+  gap: 0.6rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.inbox-item {
+  border-radius: 12px !important;
+  padding: 1rem 1.1rem !important;
+  transition: box-shadow 0.13s ease !important;
+  border: 1px solid var(--line) !important;
+  border-left-width: 4px !important;
+}
+
+.inbox-item:hover {
+  box-shadow: 0 3px 12px rgba(0,0,0,0.08) !important;
+}
+
+.inbox-type-badge {
+  border-radius: 6px !important;
+  font-size: 0.67rem !important;
+  padding: 2px 7px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em;
+}
+
+.inbox-title {
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  margin: 0.25rem 0 !important;
+}
+
+.inbox-meta {
+  font-size: 0.72rem !important;
+  color: var(--slate) !important;
+  gap: 0.4rem !important;
+}
+
+.inbox-actions {
+  gap: 0.4rem !important;
+}
+
+.inbox-empty {
+  text-align: center;
+  padding: 3rem 2rem !important;
+  border-radius: 14px;
+  background: var(--paper-raised);
+  border: 1px dashed var(--line);
+  margin: 1rem 0;
+}
+
+.inbox-empty-icon {
+  font-size: 3rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.inbox-empty h3 {
+  font-size: 1.1rem !important;
+  margin-bottom: 0.4rem !important;
+  font-weight: 700;
+}
+
+.shared-by-me-section {
+  border-radius: 14px !important;
+  border: 1px solid var(--line) !important;
+  padding: 1rem 1.25rem !important;
+  margin-top: 1.5rem !important;
+  background: var(--paper-raised) !important;
+}
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-label {
+  font-size: 0.88rem !important;
+  font-weight: 700 !important;
+}
+
+/* ── MOBILE TOPBAR REFINEMENT ── */
+.mobile-topbar {
+  background: linear-gradient(180deg, #111827, #0f172a) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.07) !important;
+}
+
+.mobile-brand-name {
+  color: #f9f7f2 !important;
+  font-weight: 700 !important;
+}
+
+/* ── DARK THEME OVERRIDES ── */
+[data-theme="dark"] .sidebar {
+  background: linear-gradient(180deg, #080c14 0%, #060a10 100%) !important;
+}
+
+[data-theme="dark"] .player-header {
+  background: var(--paper-raised);
+}
+
+[data-theme="dark"] .stat-item {
+  background: rgba(255,255,255,0.03);
+}
+
+
+/* ── CENTER QUIZ PLAYER AND RESULT ON WIDER SCREENS ── */
+.player-wrap { margin: 0 auto; }
+.result-wrap { margin: 0 auto; }
+
+/* ── QUIZ SETUP CARD IMPROVEMENTS ── */
+.setup-card {
+  max-width: 600px !important;
+  margin: 0 auto;
+}
+
+.setup-block {
+  background: var(--paper-raised) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 12px !important;
+  padding: 1.25rem !important;
+  margin-bottom: 0 !important;
+}
+
+.setup-block label:first-child {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--slate);
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.setup-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem !important;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.toggle-row:last-of-type { border-bottom: none; }
+
+.toggle-row > span:first-child {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.setup-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.seg-control {
+  background: var(--paper) !important;
+  border-radius: 8px !important;
+  padding: 3px !important;
+  border: 1px solid var(--line) !important;
+  display: flex !important;
+  gap: 3px !important;
+  margin-bottom: 0.75rem;
+}
+
+.seg-control .seg-btn {
+  border-radius: 6px !important;
+  flex: 1 !important;
+  font-size: 0.82rem !important;
+  padding: 0.4rem 0.6rem !important;
+  border: none !important;
+  font-weight: 600 !important;
+  transition: all 0.13s !important;
+  color: var(--ink-soft) !important;
+  background: transparent !important;
+}
+
+.seg-control .seg-btn.active {
+  background: var(--saffron) !important;
+  color: #111 !important;
+  box-shadow: 0 1px 4px rgba(232,147,46,0.3) !important;
+}
+
+.preset-btn {
+  border-radius: 20px !important;
+  font-size: 0.78rem !important;
+  padding: 0.3rem 0.75rem !important;
+  border: 1.5px solid var(--line) !important;
+  background: transparent !important;
+  color: var(--ink-soft);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.preset-btn:hover, .preset-btn.active {
+  border-color: var(--saffron) !important;
+  color: var(--ink) !important;
+  background: var(--saffron-soft) !important;
+}
+
+.range-count-badge {
+  background: var(--saffron) !important;
+  color: #111 !important;
+  font-weight: 700 !important;
+  padding: 0.35rem 0.75rem !important;
+  border-radius: 20px !important;
+  font-size: 0.8rem !important;
+  white-space: nowrap;
+}
+
+
+
+
+/* ── FIX: inbox view-header alignment ── */
+#view-inbox .view-header {
+  align-items: center;
+}
+.view--auth.active ~ * .mobile-nav,
+#view-auth[style*="display: flex"] ~ #app-shell .mobile-nav {
+  display: none !important;
+}
+
+/* ══════════════════════════════════════════════
+   BREADCRUMB PATH NAV
+══════════════════════════════════════════════ */
+.folder-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 14px 0;
+  flex-wrap: wrap;
+}
+.breadcrumb-item {
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: #4d9de0;
+}
+.breadcrumb-link {
+  cursor: pointer;
+  color: #4d9de0;
+  transition: color 0.15s;
+}
+.breadcrumb-link:hover {
+  color: #7ec8ff;
+  text-decoration: underline;
+}
+.breadcrumb-current {
+  color: #4d9de0;
+  opacity: 0.7;
+  cursor: default;
+}
+.breadcrumb-sep {
+  color: #4d9de0;
+  opacity: 0.5;
+  font-size: 0.8rem;
+  padding: 0 2px;
+}
+
+/* ══════════════════════════════════════════════
+   FOLDER VIEW — SECTION HEADINGS
+══════════════════════════════════════════════ */
+.folder-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #4d9de0;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.folder-section-icon {
+  font-size: 1rem;
+}
+.quizzes-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #4d9de0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 20px 0 12px 0;
+}
+
+/* ══════════════════════════════════════════════
+   SUBFOLDER GRID CARDS (screenshot style)
+══════════════════════════════════════════════ */
+.subfolder-section {
+  margin-bottom: 4px;
+}
+.subfolder-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.subfolder-card-new {
+  width: 150px;
+  min-width: 130px;
+  background: var(--card, #111827);
+  border: 1px solid var(--border, #1e3a5f);
+  border-radius: 10px;
+  padding: 16px 14px 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  text-align: left;
+}
+.subfolder-card-new:hover {
+  border-color: #4d9de0;
+  background: #0f1f33;
+}
+.subfolder-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.subfolder-card-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.subfolder-doc-icon {
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+.subfolder-folder-icon {
+  font-size: 1.6rem;
+  color: #4d9de0;
+}
+.subfolder-card-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text, #e2e8f0);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  word-break: break-word;
+}
+.subfolder-card-count {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Subfolder card action buttons */
+.subfolder-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.subfolder-card-new:hover .subfolder-card-actions {
+  opacity: 1;
+}
+.subfolder-btn-rename,
+.subfolder-btn-delete {
+  font-size: 0.7rem;
+  padding: 2px 6px !important;
+  min-width: unset !important;
+}
+.subfolder-btn-delete:hover {
+  color: #f87171 !important;
+  border-color: #f87171 !important;
+}
+.profile-rollno-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+.rollno-input {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.85rem;
+  width: 180px;
+}
+.rollno-input:focus {
+  outline: none;
+  border-color: var(--saffron);
+}
+
+/* ── Race History Cards ───────────────────────────────────────── */
+#race-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.race-hist-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  transition: box-shadow 0.15s;
+}
+.race-hist-card:hover {
+  box-shadow: var(--shadow-card);
+}
+
+/* Win / Lose / Tie accent left-border */
+.race-hist-card--win  { border-left: 4px solid #22c55e; }
+.race-hist-card--lose { border-left: 4px solid #ef4444; }
+.race-hist-card--tie  { border-left: 4px solid var(--saffron); }
+
+.race-hist-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #6366f1;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.race-hist-vs-sep {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+  opacity: 0.6;
+  margin: 0 0.3rem;
+  vertical-align: middle;
+}
+
+.race-hist-info {
+  flex: 1;
+  min-width: 0;
+}
+.race-hist-opp {
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.race-hist-score {
+  font-size: 0.82rem;
+  color: var(--slate);
+  margin: 0.1rem 0;
+}
+.race-hist-date {
+  font-size: 0.75rem;
+  color: var(--slate);
+  opacity: 0.75;
+}
+
+.race-hist-badge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.race-hist-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.race-hist-card--win  .race-hist-badge { background: #dcfce7; color: #16a34a; }
+.race-hist-card--lose .race-hist-badge { background: #fee2e2; color: #dc2626; }
+.race-hist-card--tie  .race-hist-badge { background: var(--saffron-soft); color: #92400e; }
+
+[data-theme="dark"] .race-hist-card--win  .race-hist-badge { background: #14532d; color: #86efac; }
+[data-theme="dark"] .race-hist-card--lose .race-hist-badge { background: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .race-hist-card--tie  .race-hist-badge { background: #451a03; color: #fcd34d; }
+
+/* ── Chat Panel ───────────────────────────────────────────────── */
+.chat-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(380px, 100vw);
+  height: 100dvh;
+  background: var(--bg, #0f0f0f);
+  border-left: 1.5px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  z-index: 1200;
+  transform: translateX(110%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+}
+.chat-panel--open {
+  transform: translateX(0);
+}
+
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+.chat-panel-title {
+  font-weight: 800;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-panel-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--slate);
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.chat-panel-close:hover { background: var(--line); }
+
+.chat-messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  scroll-behavior: smooth;
+}
+
+/* ── Chat Bubbles ────────────────────────────────────────────── */
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+  gap: 0.15rem;
+}
+.chat-bubble--mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.chat-bubble--theirs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-bubble-text {
+  padding: 0.5rem 0.8rem;
+  border-radius: 18px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.chat-bubble--mine  .chat-bubble-text {
+  background: var(--saffron);
+  color: #0f0f0f;
+  border-bottom-right-radius: 4px;
+}
+.chat-bubble--theirs .chat-bubble-text {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble-time {
+  font-size: 0.68rem;
+  color: var(--slate);
+  opacity: 0.7;
+  padding: 0 0.3rem;
+}
+
+/* ── Chat Input Row ───────────────────────────────────────────── */
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+.chat-input {
+  flex: 1;
+  resize: none;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--ink);
+  max-height: 120px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: var(--saffron);
+}
+.chat-send-btn {
+  padding: 0.55rem 1rem;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+/* ── Unread badge on friend card ─────────────────────────────── */
+.chat-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 9px;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+}
+
+/* ── Share Chapter Quiz Picker (scqp) — override .modal-card label defaults ── */
+label.scqp-quiz-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  padding: 0.5rem 0.8rem !important;
+  margin-bottom: 0 !important;
+  font-weight: normal !important;
+  cursor: pointer;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+label.scqp-quiz-row input[type="checkbox"] {
+  width: 15px !important;
+  height: 15px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  cursor: pointer;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2;
+  accent-color: var(--saffron);
+}
+
+/* ── scqp custom checkbox visual fix ── */
+label.scqp-quiz-row::before {
+  content: '';
+  display: inline-block !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px;
+  border: 2px solid #ccc;
+  border-radius: 4px;
+  background: var(--paper, #fff);
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  margin: 0 !important;
+  order: -1;
+}
+label.scqp-quiz-row.scqp-checked::before {
+  background: var(--saffron, #e8932e) !important;
+  border-color: var(--saffron, #e8932e) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 12px !important;
+}
+label.scqp-quiz-row input[type="checkbox"].scqp-quiz-cb {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
 }
