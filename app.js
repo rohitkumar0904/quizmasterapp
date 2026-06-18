@@ -1028,7 +1028,11 @@ async function openFriendProfile(friend) {
     .eq('id', friend.id)
     .maybeSingle();
   if (freshProfile) profile = freshProfile;
-
+// Deleted user ka profile open mat karo
+if (freshProfile?.is_deleted) {
+  toast('This user no longer exists.', 'info');
+  return;
+}
   const initials = (profile.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   document.getElementById('friend-profile-avatar').textContent = initials;
   document.getElementById('friend-profile-name').textContent = profile.display_name || (isSelf ? 'You' : 'User');
