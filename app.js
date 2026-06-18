@@ -2689,7 +2689,8 @@ function updateFriendBadge(count) {
 
 async function searchUsers(query) {
   if (!query || query.length < 2) return [];
-  const { data } = await sb.from('profiles')
+  // confirmed_profiles view sirf verified users return karta hai
+  const { data } = await sb.from('confirmed_profiles')
     .select('id, display_name, roll_no')
     .or(`display_name.ilike.%${query}%,roll_no.ilike.%${query}%`)
     .neq('id', currentUser?.id)
@@ -3051,7 +3052,8 @@ function setupShareChapterModal() {
   if (!folder) return;
 
   // ── Inject styles once ───────────────────────────────────────
-  if (!document.getElementById('scqp-style')) {
+  document.getElementById('scqp-style')?.remove();
+  {
     const s = document.createElement('style');
     s.id = 'scqp-style';
     s.textContent = `
