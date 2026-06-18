@@ -1319,50 +1319,53 @@ async function importSharedQuiz(quizId, quizTitle, fromName, targetFolderId, tar
 
 // ── DESTINATION PICKER ───────────────────────────────────────
 // Shows a modal asking the user where to save an imported quiz/chapter.
-// onConfirm(folderId, folderName) is called with the chosen destination,
-// or (null, null) if the user picks "New Folder…" and a new one is created.
+// onConfirm(folderId, folderName) is called with the chosen destination.
 function showDestinationPicker(title, onConfirm) {
   document.getElementById('modal-destination-picker')?.remove();
 
   const rootFolders = foldersCache.filter(f => f.user_id === currentUser?.id && !f.parent_id);
   const hasFolders  = rootFolders.length > 0;
 
-  const optionsHtml = rootFolders.map(f =>
-    `<label class="dest-option">
-      <input type="radio" name="dest-folder" value="${escHtml(f.id)}" data-name="${escHtml(f.name)}">
-      <span class="dest-option-icon">📁</span>
-      <span class="dest-option-label">${escHtml(f.name)}</span>
+  // Each folder = compact row: radio · 📁 icon · name
+  const optionsHtml = rootFolders.map((f, i) =>
+    `<label class="dp-row" for="dp-r-${i}">
+      <input class="dp-radio" type="radio" name="dest-folder"
+        id="dp-r-${i}" value="${escHtml(f.id)}" data-name="${escHtml(f.name)}"
+        ${i === 0 ? 'checked' : ''}>
+      <span class="dp-folder-icon">📁</span>
+      <span class="dp-folder-name">${escHtml(f.name)}</span>
     </label>`
   ).join('');
 
-  // "New Folder" row is pre-expanded when user has no folders yet
-  const newFolderRowStyle = hasFolders ? 'display:none;' : 'display:block;';
-  const newFolderAutoChecked = !hasFolders ? 'checked' : '';
+  const newChecked         = !hasFolders ? 'checked' : '';
+  const newInputDisplay    = !hasFolders ? 'block'   : 'none';
 
   const m = document.createElement('div');
   m.className = 'modal active';
   m.id = 'modal-destination-picker';
   m.innerHTML = `
-    <div class="modal-card" style="max-width:420px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem">
-        <h3 style="margin:0">📥 Save to…</h3>
-        <button class="btn btn--ghost btn--small" id="dest-cancel-x">✕</button>
+    <div class="modal-card dp-card">
+      <div class="dp-header">
+        <span class="dp-title">📥 Save to…</span>
+        <button class="dp-close" id="dest-cancel-x" aria-label="Close">✕</button>
       </div>
-      <p style="color:var(--slate);font-size:.85rem;margin:0 0 1rem;word-break:break-word">${escHtml(title)}</p>
+      <p class="dp-subtitle">${escHtml(title)}</p>
 
-      <div id="dest-folder-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem">
+      <div class="dp-list" id="dest-folder-list">
         ${optionsHtml}
-        <label class="dest-option dest-option--new">
-          <input type="radio" name="dest-folder" value="__new__" ${newFolderAutoChecked}>
-          <span class="dest-option-icon">➕</span>
-          <span class="dest-option-label">Create new folder</span>
+
+        <label class="dp-row dp-row--new" for="dp-r-new">
+          <input class="dp-radio" type="radio" name="dest-folder"
+            id="dp-r-new" value="__new__" ${newChecked}>
+          <span class="dp-folder-icon">➕</span>
+          <span class="dp-folder-name">Create new folder</span>
         </label>
       </div>
 
-      <div id="dest-new-folder-row" style="${newFolderRowStyle}margin-bottom:1rem">
+      <div id="dest-new-folder-row" style="display:${newInputDisplay};padding:0 0 0.75rem">
         <input id="dest-new-folder-name" class="input" type="text"
           placeholder="New folder name…" style="width:100%"
-          autocomplete="off" autocorrect="off" spellcheck="false">
+          autocomplete="off" spellcheck="false">
       </div>
 
       <div class="modal-actions">
@@ -1373,36 +1376,31 @@ function showDestinationPicker(title, onConfirm) {
 
   document.body.appendChild(m);
 
-  // Auto-focus new-folder input if no existing folders
   if (!hasFolders) {
     setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 80);
-  } else {
-    // Pre-select first existing folder
-    const firstFolderRadio = m.querySelector('input[name="dest-folder"][value]:not([value="__new__"])');
-    if (firstFolderRadio) firstFolderRadio.checked = true;
   }
 
-  // Toggle new-folder name input visibility
-  m.querySelectorAll('input[name="dest-folder"]').forEach(radio => {
+  // Show / hide new-name input when radio changes
+  m.querySelectorAll('.dp-radio').forEach(radio => {
     radio.addEventListener('change', () => {
-      const newRow = document.getElementById('dest-new-folder-row');
-      const isNew  = radio.value === '__new__';
-      if (newRow) newRow.style.display = isNew ? 'block' : 'none';
-      if (isNew)  setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 50);
+      const row  = document.getElementById('dest-new-folder-row');
+      const isNew = radio.value === '__new__';
+      if (row) row.style.display = isNew ? 'block' : 'none';
+      if (isNew) setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 50);
     });
   });
 
-  // Allow Enter key on new-folder input to confirm
+  // Enter key on new-folder input confirms
   document.getElementById('dest-new-folder-name')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dest-confirm')?.click(); }
   });
 
-  const closeModal = () => m.remove();
-  document.getElementById('dest-cancel')?.addEventListener('click', closeModal);
-  document.getElementById('dest-cancel-x')?.addEventListener('click', closeModal);
+  const closePicker = () => m.remove();
+  document.getElementById('dest-cancel')?.addEventListener('click', closePicker);
+  document.getElementById('dest-cancel-x')?.addEventListener('click', closePicker);
 
   document.getElementById('dest-confirm').addEventListener('click', async () => {
-    const selected = m.querySelector('input[name="dest-folder"]:checked');
+    const selected = m.querySelector('.dp-radio:checked');
     if (!selected) { toast('Pick a destination folder.', 'info'); return; }
 
     if (selected.value === '__new__') {
@@ -1420,31 +1418,92 @@ function showDestinationPicker(title, onConfirm) {
       m.remove();
       onConfirm(newFolder.id, newFolder.name);
     } else {
-      // ✅ Save directly into the chosen folder — no extra folder created
-      const folderId   = selected.value;
-      const folderName = selected.dataset.name || folderId;
+      // ✅ Goes directly into chosen folder — no extra folder created
       m.remove();
-      onConfirm(folderId, folderName);
+      onConfirm(selected.value, selected.dataset.name || selected.value);
     }
   });
 
-  // Inject styles once
+  // ── Styles (injected once) ──────────────────────────────────
   if (!document.getElementById('dest-picker-style')) {
     const s = document.createElement('style');
     s.id = 'dest-picker-style';
     s.textContent = `
-      .dest-option {
-        display: flex; align-items: center; gap: .6rem; padding: .55rem .75rem;
-        border: 1px solid var(--line); border-radius: var(--radius-md);
-        cursor: pointer; transition: background .15s; font-size: .9rem;
+      /* Modal card sizing */
+      .dp-card { max-width: 400px; width: 100%; padding: 1.25rem 1.25rem 1rem; }
+
+      /* Header row */
+      .dp-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 0.2rem;
       }
-      .dest-option:hover { background: var(--hover); }
-      .dest-option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft, #eff6ff); }
-      .dest-option input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; flex-shrink: 0; }
-      .dest-option--new { border-style: dashed; }
-      .dest-option--new:has(input:checked) { border-color: var(--accent); }
-      .dest-option-label { flex: 1; }
-      .dest-option-icon { font-size: 1rem; }
+      .dp-title {
+        font-family: var(--font-display); font-size: 1.05rem;
+        font-weight: 700; color: var(--ink);
+      }
+      .dp-close {
+        background: none; border: none; font-size: 1rem; cursor: pointer;
+        color: var(--slate); padding: 0.2rem 0.4rem;
+        border-radius: var(--radius-sm); line-height: 1;
+        transition: background .15s;
+      }
+      .dp-close:hover { background: var(--line); }
+
+      /* Subtitle */
+      .dp-subtitle {
+        font-size: 0.82rem; color: var(--slate);
+        margin: 0 0 0.85rem; word-break: break-word;
+      }
+
+      /* Scrollable list */
+      .dp-list {
+        max-height: 220px; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 0;
+        border: 1px solid var(--line); border-radius: var(--radius-md);
+        margin-bottom: 0.75rem; overflow-x: hidden;
+      }
+
+      /* Each folder row */
+      .dp-row {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.6rem 0.85rem; cursor: pointer;
+        border-bottom: 1px solid var(--line);
+        transition: background .12s; user-select: none;
+      }
+      .dp-row:last-child { border-bottom: none; }
+      .dp-row:hover { background: var(--paper-raised); }
+
+      /* Selected state — matches screenshot blue tint */
+      .dp-row:has(.dp-radio:checked) {
+        background: var(--saffron-soft);
+      }
+      [data-theme="dark"] .dp-row:has(.dp-radio:checked) {
+        background: rgba(245,168,50,0.12);
+      }
+
+      /* Hide native radio; keep it accessible */
+      .dp-radio {
+        appearance: none; -webkit-appearance: none;
+        width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid var(--line-strong);
+        flex-shrink: 0; transition: border-color .15s, background .15s;
+        position: relative; cursor: pointer;
+      }
+      .dp-radio:checked {
+        border-color: var(--saffron);
+        background: var(--saffron);
+        box-shadow: inset 0 0 0 3px var(--paper-raised);
+      }
+
+      .dp-folder-icon { font-size: 1.1rem; flex-shrink: 0; }
+      .dp-folder-name {
+        flex: 1; font-size: 0.88rem; color: var(--ink);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+
+      /* "Create new folder" row */
+      .dp-row--new .dp-folder-name { color: var(--slate); font-style: italic; }
+      .dp-row--new:has(.dp-radio:checked) .dp-folder-name { color: var(--ink); font-style: normal; }
     `;
     document.head.appendChild(s);
   }
