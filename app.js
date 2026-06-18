@@ -2696,8 +2696,7 @@ function updateFriendBadge(count) {
 async function searchUsers(query) {
   if (!query || query.length < 2) return [];
   const q = query.trim();
-
-  // Run both searches in parallel — name + roll_no
+  // Two separate queries — .or() on views is unreliable in Supabase JS
   const [byName, byRoll] = await Promise.all([
     sb.from('confirmed_profiles')
       .select('id, display_name, roll_no')
@@ -2710,8 +2709,6 @@ async function searchUsers(query) {
       .neq('id', currentUser?.id)
       .limit(8)
   ]);
-
-  // Merge + deduplicate by id
   const seen = new Set();
   const results = [];
   for (const u of [...(byName.data || []), ...(byRoll.data || [])]) {
