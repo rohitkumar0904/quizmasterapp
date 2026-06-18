@@ -77,19 +77,34 @@ input[type="radio"]:checked + .fce-option-letter {
 
     <div class="auth-tabs">
       <button class="tab-btn active" data-tab="login">Log In</button>
+      
       <button class="tab-btn" data-tab="signup">Sign Up</button>
     </div>
 
-    <form id="form-login" class="auth-form active">
-      <label>Email
-        <input type="email" name="email" placeholder="you@example.com" required>
-      </label>
-      <label>Password
-        <input type="password" name="password" placeholder="••••••••" required>
-      </label>
-      <button type="submit" class="btn btn--primary btn--block">Log In</button>
-      <p class="auth-alt">New here? <a href="#" data-switch="signup">Create an account</a></p>
-    </form>
+<form id="form-login" class="auth-form active">
+  <label>Email
+    <input type="email" name="email" placeholder="you@example.com" required>
+  </label>
+  <label>Password
+    <input type="password" name="password" placeholder="••••••••" required>
+  </label>
+  <button type="submit" class="btn btn--primary btn--block">Log In</button>
+  <!-- ADD THIS -->
+  <p class="auth-alt"><a href="#" id="link-forgot-password">Forgot password?</a></p>
+  <p class="auth-alt">New here? <a href="#" data-switch="signup">Create an account</a></p>
+</form>
+
+<!-- ADD THIS FORM -->
+<form id="form-forgot" class="auth-form">
+  <p style="font-size:0.85rem;color:var(--slate);margin-bottom:1rem">
+    Enter your email and we'll send a reset link.
+  </p>
+  <label>Email
+    <input type="email" name="email" placeholder="you@example.com" required>
+  </label>
+  <button type="submit" class="btn btn--primary btn--block">Send Reset Link</button>
+  <p class="auth-alt"><a href="#" data-switch="login">← Back to Login</a></p>
+</form>
 
     <form id="form-signup" class="auth-form">
       <label>Display Name
