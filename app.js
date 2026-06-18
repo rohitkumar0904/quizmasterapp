@@ -174,7 +174,7 @@ async function loadProfile() {
     const { data: newProfile } = await sb.from('profiles').insert({
       id: currentUser.id,
       display_name: name,
-      roll_no: null
+  roll_no: ''  // blank — verify hone ke baad trigger assign karega
     }).select().single();
     data = newProfile;
   }
