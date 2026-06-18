@@ -2695,13 +2695,29 @@ function updateFriendBadge(count) {
 
 async function searchUsers(query) {
   if (!query || query.length < 2) return [];
-  // confirmed_profiles view sirf verified users return karta hai
-  const { data } = await sb.from('confirmed_profiles')
-    .select('id, display_name, roll_no')
-    .or(`display_name.ilike.%${query}%,roll_no.ilike.%${query}%`)
-    .neq('id', currentUser?.id)
-    .limit(8);
-  return data || [];
+  const q = query.trim();
+
+  // Run both searches in parallel — name + roll_no
+  const [byName, byRoll] = await Promise.all([
+    sb.from('confirmed_profiles')
+      .select('id, display_name, roll_no')
+      .ilike('display_name', `%${q}%`)
+      .neq('id', currentUser?.id)
+      .limit(8),
+    sb.from('confirmed_profiles')
+      .select('id, display_name, roll_no')
+      .ilike('roll_no', `%${q}%`)
+      .neq('id', currentUser?.id)
+      .limit(8)
+  ]);
+
+  // Merge + deduplicate by id
+  const seen = new Set();
+  const results = [];
+  for (const u of [...(byName.data || []), ...(byRoll.data || [])]) {
+    if (!seen.has(u.id)) { seen.add(u.id); results.push(u); }
+  }
+  return results.slice(0, 8);
 }
 
 async function sendFriendRequest(toUserId) {
