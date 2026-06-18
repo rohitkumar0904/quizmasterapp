@@ -4684,6 +4684,10 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
     if (event === 'SIGNED_IN' && session?.user && !currentUser) {
       await onSignedIn(session.user);
     }
+     if (event === 'PASSWORD_RECOVERY') {
+    showPasswordResetUI();
+  }
+
     if (event === 'SIGNED_OUT') {
       currentUser = null;
       currentProfile = null;
@@ -4763,6 +4767,78 @@ async function resetMyData() {
 
   // Reload app fresh
   setTimeout(() => location.reload(), 1500);
+}
+// ── PASSWORD RECOVERY HANDLER ─────────────────────────────
+(async () => {
+  const hash = window.location.hash;
+  if (hash.includes('type=recovery')) {
+    // Token URL mein hai, session set hoga automatically
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      showPasswordResetUI();
+    }
+  }
+})();
+
+function showPasswordResetUI() {
+  // Auth view dikhao
+  const auth = document.getElementById('view-auth');
+  auth.style.display = 'flex';
+  auth.classList.add('active');
+  document.getElementById('app-shell').style.display = 'none';
+
+  // Saare forms hide karo
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+
+  // Reset password form inject karo agar nahi hai
+  if (!document.getElementById('form-reset-password')) {
+    const form = document.createElement('form');
+    form.id = 'form-reset-password';
+    form.className = 'auth-form active';
+    form.innerHTML = `
+      <p style="font-size:0.85rem;color:var(--slate);margin-bottom:1rem">
+        Enter your new password below.
+      </p>
+      <label>New Password
+        <input type="password" name="password" placeholder="Minimum 6 characters" required minlength="6">
+      </label>
+      <label>Confirm Password
+        <input type="password" name="confirm" placeholder="Repeat password" required minlength="6">
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Set New Password</button>
+    `;
+    form.addEventListener('submit', handlePasswordReset);
+    document.querySelector('.auth-card').appendChild(form);
+  } else {
+    document.getElementById('form-reset-password').classList.add('active');
+  }
+}
+
+async function handlePasswordReset(e) {
+  e.preventDefault();
+  const form = e.target;
+  const pass    = form.password.value;
+  const confirm = form.confirm.value;
+  const btn     = form.querySelector('[type=submit]');
+
+  if (pass.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
+  if (pass !== confirm) { toast('Passwords do not match', 'error'); return; }
+
+  setLoading(btn, true, 'Updating…');
+  const { error } = await sb.auth.updateUser({ password: pass });
+  setLoading(btn, false);
+
+  if (error) { toast('Could not update password: ' + error.message, 'error'); return; }
+
+  toast('Password updated! Please log in.', 'success');
+  await sb.auth.signOut();
+
+  // Clean URL
+  history.replaceState(null, '', window.location.pathname);
+
+  // Back to login
+  form.classList.remove('active');
+  switchTab('login');
 }
 // Add Reset button in profile view
 if (profileView && !document.getElementById('btn-reset-data')) {
