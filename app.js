@@ -3195,7 +3195,8 @@ function setupShareChapterModal() {
   });
 
   // Select / Deselect all
-  let allChecked = true;
+  let allChecked = false;
+  document.getElementById('scqp-toggle-all').textContent = 'Select all';
   document.getElementById('scqp-toggle-all').addEventListener('click', () => {
     allChecked = !allChecked;
     wrap.querySelectorAll('.scqp-quiz-cb').forEach(cb => cb.checked = allChecked);
