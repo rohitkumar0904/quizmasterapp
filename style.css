@@ -5470,3 +5470,29 @@ input[type="checkbox"] { display: none; }
   margin-left: 0.3rem;
   vertical-align: middle;
 }
+
+/* ── Share Chapter Quiz Picker (scqp) — override .modal-card label defaults ── */
+label.scqp-quiz-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  padding: 0.5rem 0.8rem !important;
+  margin-bottom: 0 !important;
+  font-weight: normal !important;
+  cursor: pointer;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+label.scqp-quiz-row input[type="checkbox"] {
+  width: 15px !important;
+  height: 15px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  cursor: pointer;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2;
+  accent-color: var(--saffron);
+}
