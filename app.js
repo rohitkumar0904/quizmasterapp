@@ -4674,19 +4674,31 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
 // ── SESSION RESTORE ───────────────────────────────────────────
 // Check for existing session on page load
 (async () => {
+  // Recovery link pe app andar mat jaao
+  if (window.location.hash.includes('type=recovery')) {
+    showPasswordResetUI();
+    return;
+  }
+
   const { data: { session } } = await sb.auth.getSession();
   if (session?.user) {
     await onSignedIn(session.user);
   }
 
-  // Listen for auth changes (token refresh, signout on another tab)
   sb.auth.onAuthStateChange(async (event, session) => {
+    // PASSWORD_RECOVERY pehle check karo — SIGNED_IN se pehle
+    if (event === 'PASSWORD_RECOVERY') {
+      showPasswordResetUI();
+      return;
+    }
+
     if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+      if (window.location.hash.includes('type=recovery')) {
+        showPasswordResetUI();
+        return;
+      }
       await onSignedIn(session.user);
     }
-     if (event === 'PASSWORD_RECOVERY') {
-    showPasswordResetUI();
-  }
 
     if (event === 'SIGNED_OUT') {
       currentUser = null;
