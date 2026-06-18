@@ -4467,8 +4467,8 @@ document.getElementById('btn-save-quiz').addEventListener('click', e => {
   saveQuiz();
 }, true);
 
-// Create group
-['btn-create-group', 'btn-new-group'].forEach(id => document.getElementById(id)?.addEventListener('click', async () => {
+// Create folder group (Dashboard sidebar — "📂 New Folder Group")
+document.getElementById('btn-create-group')?.addEventListener('click', async () => {
   const name = prompt('Group name (e.g. GS, MATHS, ENGLISH):');
   if (!name || !name.trim()) return;
   const { data, error } = await sb.from('groups').insert({
@@ -4480,7 +4480,13 @@ document.getElementById('btn-save-quiz').addEventListener('click', e => {
   groupsCache.push(data);
   renderFolders();
   toast('Group "' + name.trim() + '" created!', 'success');
-}));
+});
+
+// Friend Study Groups — feature not built yet (no study_groups/group_members table).
+// Was previously wired to the folder-group creator above by mistake.
+document.getElementById('btn-new-group')?.addEventListener('click', () => {
+  toast('Study Groups are coming soon! 👥', 'info');
+});
 
 
 // Create folder
@@ -4685,6 +4691,7 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
     await onSignedIn(session.user);
   }
 
+  // Listen for auth changes (token refresh, signout on another tab)
   sb.auth.onAuthStateChange(async (event, session) => {
     // PASSWORD_RECOVERY pehle check karo — SIGNED_IN se pehle
     if (event === 'PASSWORD_RECOVERY') {
