@@ -72,6 +72,37 @@ function setLoading(btn, loading, label = '') {
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
+// Forgot password link
+document.getElementById('link-forgot-password')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  switchTab('forgot');
+});
+
+// Handle forgot password form
+document.getElementById('form-forgot')?.addEventListener('submit', handleForgotPassword);
+
+async function handleForgotPassword(e) {
+  e.preventDefault();
+  const form  = e.target;
+  const email = form.email.value.trim();
+  const btn   = form.querySelector('[type=submit]');
+  setLoading(btn, true, 'Sending…');
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://quizmasterapps.vercel.app'
+  });
+
+  setLoading(btn, false);
+
+  if (error) {
+    toast('Could not send reset email: ' + error.message, 'error');
+    return;
+  }
+
+  toast('Reset link sent! Check your email.', 'success');
+  form.reset();
+  switchTab('login');
+}
 
 async function handleLogin(e) {
   e.preventDefault();
