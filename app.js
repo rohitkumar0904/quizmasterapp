@@ -1287,32 +1287,168 @@ async function renderFriendPublicLibrary(friend, isSelf) {
   });
 }
 
-// Import a single shared quiz into the current user's library (own folder)
-async function importSharedQuiz(quizId, quizTitle, fromName) {
+// Import a single shared quiz into the current user's library.
+// If targetFolderId/Name are provided it goes straight there; otherwise a
+// destination-picker modal is shown first.
+async function importSharedQuiz(quizId, quizTitle, fromName, targetFolderId, targetFolderName) {
+  if (!targetFolderId) {
+    // Show picker — then re-call with the chosen folder
+    showDestinationPicker(quizTitle || 'Shared Quiz', (fId, fName) => {
+      importSharedQuiz(quizId, quizTitle, fromName, fId, fName);
+    });
+    return;
+  }
+
   const { data: srcQuiz, error } = await sb.from('quizzes')
     .select('title, questions').eq('id', quizId).single();
   if (error || !srcQuiz) { toast('Could not load quiz: ' + (error?.message || ''), 'error'); return; }
 
-  const folderName = `Shared by ${fromName || 'Friend'}`;
-  let folder = foldersCache.find(f => f.user_id === currentUser.id && f.name === folderName);
-  if (!folder) {
-    folder = await createFolder(folderName, true /* silent */);
-    if (!folder) { toast('Could not create folder.', 'error'); return; }
-  }
-
   const { error: insErr } = await sb.from('quizzes').insert({
     user_id: currentUser.id,
-    folder_id: folder.id,
+    folder_id: targetFolderId,
     title: srcQuiz.title,
     questions: srcQuiz.questions,
     is_public: false
   });
   if (insErr) { toast('Could not add quiz: ' + insErr.message, 'error'); return; }
 
-  loadFolderCount(folder.id);
-  toast(`"${srcQuiz.title}" added to "${folder.name}"!`, 'success');
+  loadFolderCount(targetFolderId);
+  toast(`"${srcQuiz.title}" added to "${targetFolderName}"!`, 'success');
 }
 
+
+// ── DESTINATION PICKER ───────────────────────────────────────
+// Shows a modal asking the user where to save an imported quiz/chapter.
+// onConfirm(folderId, folderName) is called with the chosen destination,
+// or (null, null) if the user picks "New Folder…" and a new one is created.
+function showDestinationPicker(title, onConfirm) {
+  document.getElementById('modal-destination-picker')?.remove();
+
+  const rootFolders = foldersCache.filter(f => f.user_id === currentUser?.id && !f.parent_id);
+  const hasFolders  = rootFolders.length > 0;
+
+  const optionsHtml = rootFolders.map(f =>
+    `<label class="dest-option">
+      <input type="radio" name="dest-folder" value="${escHtml(f.id)}" data-name="${escHtml(f.name)}">
+      <span class="dest-option-icon">📁</span>
+      <span class="dest-option-label">${escHtml(f.name)}</span>
+    </label>`
+  ).join('');
+
+  // "New Folder" row is pre-expanded when user has no folders yet
+  const newFolderRowStyle = hasFolders ? 'display:none;' : 'display:block;';
+  const newFolderAutoChecked = !hasFolders ? 'checked' : '';
+
+  const m = document.createElement('div');
+  m.className = 'modal active';
+  m.id = 'modal-destination-picker';
+  m.innerHTML = `
+    <div class="modal-card" style="max-width:420px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem">
+        <h3 style="margin:0">📥 Save to…</h3>
+        <button class="btn btn--ghost btn--small" id="dest-cancel-x">✕</button>
+      </div>
+      <p style="color:var(--slate);font-size:.85rem;margin:0 0 1rem;word-break:break-word">${escHtml(title)}</p>
+
+      <div id="dest-folder-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem">
+        ${optionsHtml}
+        <label class="dest-option dest-option--new">
+          <input type="radio" name="dest-folder" value="__new__" ${newFolderAutoChecked}>
+          <span class="dest-option-icon">➕</span>
+          <span class="dest-option-label">Create new folder</span>
+        </label>
+      </div>
+
+      <div id="dest-new-folder-row" style="${newFolderRowStyle}margin-bottom:1rem">
+        <input id="dest-new-folder-name" class="input" type="text"
+          placeholder="New folder name…" style="width:100%"
+          autocomplete="off" autocorrect="off" spellcheck="false">
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn--ghost" id="dest-cancel">Cancel</button>
+        <button class="btn btn--primary" id="dest-confirm">Save Here</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(m);
+
+  // Auto-focus new-folder input if no existing folders
+  if (!hasFolders) {
+    setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 80);
+  } else {
+    // Pre-select first existing folder
+    const firstFolderRadio = m.querySelector('input[name="dest-folder"][value]:not([value="__new__"])');
+    if (firstFolderRadio) firstFolderRadio.checked = true;
+  }
+
+  // Toggle new-folder name input visibility
+  m.querySelectorAll('input[name="dest-folder"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const newRow = document.getElementById('dest-new-folder-row');
+      const isNew  = radio.value === '__new__';
+      if (newRow) newRow.style.display = isNew ? 'block' : 'none';
+      if (isNew)  setTimeout(() => document.getElementById('dest-new-folder-name')?.focus(), 50);
+    });
+  });
+
+  // Allow Enter key on new-folder input to confirm
+  document.getElementById('dest-new-folder-name')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dest-confirm')?.click(); }
+  });
+
+  const closeModal = () => m.remove();
+  document.getElementById('dest-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('dest-cancel-x')?.addEventListener('click', closeModal);
+
+  document.getElementById('dest-confirm').addEventListener('click', async () => {
+    const selected = m.querySelector('input[name="dest-folder"]:checked');
+    if (!selected) { toast('Pick a destination folder.', 'info'); return; }
+
+    if (selected.value === '__new__') {
+      const nameVal = (document.getElementById('dest-new-folder-name')?.value || '').trim();
+      if (!nameVal) {
+        document.getElementById('dest-new-folder-name')?.focus();
+        toast('Enter a name for the new folder.', 'error');
+        return;
+      }
+      const btn = document.getElementById('dest-confirm');
+      setLoading(btn, true, 'Creating…');
+      const newFolder = await createFolder(nameVal, true);
+      setLoading(btn, false);
+      if (!newFolder) { toast('Could not create folder.', 'error'); return; }
+      m.remove();
+      onConfirm(newFolder.id, newFolder.name);
+    } else {
+      // ✅ Save directly into the chosen folder — no extra folder created
+      const folderId   = selected.value;
+      const folderName = selected.dataset.name || folderId;
+      m.remove();
+      onConfirm(folderId, folderName);
+    }
+  });
+
+  // Inject styles once
+  if (!document.getElementById('dest-picker-style')) {
+    const s = document.createElement('style');
+    s.id = 'dest-picker-style';
+    s.textContent = `
+      .dest-option {
+        display: flex; align-items: center; gap: .6rem; padding: .55rem .75rem;
+        border: 1px solid var(--line); border-radius: var(--radius-md);
+        cursor: pointer; transition: background .15s; font-size: .9rem;
+      }
+      .dest-option:hover { background: var(--hover); }
+      .dest-option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft, #eff6ff); }
+      .dest-option input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; flex-shrink: 0; }
+      .dest-option--new { border-style: dashed; }
+      .dest-option--new:has(input:checked) { border-color: var(--accent); }
+      .dest-option-label { flex: 1; }
+      .dest-option-icon { font-size: 1rem; }
+    `;
+    document.head.appendChild(s);
+  }
+}
 
 let addQuestionTargetQuizId = null;
 
@@ -2695,11 +2831,7 @@ ${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small 
     item.querySelector('.btn-save-quiz-inbox')?.addEventListener('click', async e => {
       e.stopPropagation();
       if (msg.body?.quiz_id) {
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        btn.textContent = 'Saving…';
         await importSharedQuiz(msg.body.quiz_id, msg.title, senderName);
-        btn.textContent = '✓ Saved';
       }
     });
 
@@ -2787,7 +2919,16 @@ function updateInboxBadge(count) {
   if (mobileBadge) { mobileBadge.textContent = count; mobileBadge.style.display = count > 0 ? 'inline-flex' : 'none'; }
 }
 
-async function importSharedChapter(folderId, folderName) {
+async function importSharedChapter(folderId, folderName, targetParentId, targetParentName) {
+  if (!targetParentId) {
+    // Show picker — let user choose where the root copy lands
+    showDestinationPicker(
+      (folderName || 'Shared Chapter') + ' — choose where to save',
+      (pId, pName) => importSharedChapter(folderId, folderName, pId, pName)
+    );
+    return;
+  }
+
   toast('Importing…', 'info');
 
   // Step 1: fetch ALL folders in tree (public only) + ALL quizzes
@@ -2814,7 +2955,7 @@ async function importSharedChapter(folderId, folderName) {
   const srcFolderMap = {};
   (srcFolders || []).forEach(f => srcFolderMap[f.id] = f);
   const srcIdToNewId = {};
-  const bfsQueue = [{ srcId: folderId, parentNewId: null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
+  const bfsQueue = [{ srcId: folderId, parentNewId: targetParentId || null, name: (folderName || 'Shared Chapter') + ' (shared)' }];
 
   while (bfsQueue.length) {
     const { srcId, parentNewId, name } = bfsQueue.shift();
