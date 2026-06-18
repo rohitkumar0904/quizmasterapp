@@ -3159,8 +3159,9 @@ function setupShareChapterModal() {
     : quizzesCache.map(q => {
         const n = Array.isArray(q.questions) ? q.questions.length : 0;
         return `<label class="scqp-quiz-row">
-          <input type="checkbox" class="scqp-quiz-cb"
-            data-quiz-id="${q.id}" data-quiz-title="${escHtml(q.title)}" checked>
+         <input type="checkbox" class="scqp-quiz-cb"
+  data-quiz-id="${q.id}"
+  data-quiz-title="${escHtml(q.title)}">
           <span class="scqp-quiz-name">${escHtml(q.title)}</span>
           <span class="scqp-quiz-qs">${n} Qs</span>
         </label>`;
@@ -3289,8 +3290,8 @@ document.getElementById('btn-send-chapter')?.addEventListener('click', async () 
   setLoading(sendBtn, true, 'Sharing…');
 
   // ── Determine mode from segment control ──────────────────────
-  const entireFolder = !document.getElementById('scqp-btn-pick')?.classList.contains('active');
-
+const entireFolder =
+  !document.getElementById('scqp-btn-pick')?.classList.contains('scqp-active');
   if (entireFolder) {
     // ── Share full folder (existing behaviour) ───────────────────
     const descIds    = getDescendantFolderIds(folder.id);
