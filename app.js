@@ -589,8 +589,58 @@ async function createFolder(name, silent, parentId = null) {
 
 
 
-// ── CURRENT OPEN FOLDER ──────────────────────────────────────
-let activeFolderId   = null;
+// ── SUBFOLDER HEADER BUTTON ──────────────────────────────────
+// Wire up the "📁+ Subfolder" button in the folder view header
+document.getElementById('btn-add-subfolder-here')?.addEventListener('click', async () => {
+  if (!activeFolderId) { toast('No folder open', 'error'); return; }
+  const subName = prompt('New subfolder name:');
+  if (!subName || !subName.trim()) return;
+  const { data: sub, error } = await sb.from('folders').insert({
+    user_id: currentUser.id,
+    name: subName.trim(),
+    parent_id: activeFolderId
+  }).select().single();
+  if (error) { toast('Could not create subfolder: ' + error.message, 'error'); return; }
+  foldersCache.unshift(sub);
+  toast('Subfolder created!', 'success');
+  await renderSubfolders(activeFolderId);
+});
+
+// ── ADD QUIZ HERE MODAL ───────────────────────────────────────
+// Save quiz directly into the currently-open folder from the inline dialog
+document.getElementById('btn-aqh-save')?.addEventListener('click', async () => {
+  const title    = (document.getElementById('aqh-title')?.value || '').trim();
+  const statusEl = document.getElementById('aqh-status');
+
+  if (!title)          { if (statusEl) statusEl.textContent = '⚠️ Please enter a quiz name.'; return; }
+  if (!activeFolderId) { if (statusEl) statusEl.textContent = '⚠️ No folder is open.'; return; }
+
+  const btn = document.getElementById('btn-aqh-save');
+  if (btn) { btn._orig = btn.textContent; btn.textContent = 'Creating…'; btn.disabled = true; }
+
+  const { data, error } = await sb.from('quizzes').insert({
+    user_id:   currentUser.id,
+    folder_id: activeFolderId,
+    title,
+    questions: []
+  }).select().single();
+
+  if (btn) { btn.textContent = btn._orig; btn.disabled = false; }
+
+  if (error) { if (statusEl) statusEl.textContent = '❌ ' + error.message; return; }
+
+  quizzesCache.unshift(data);
+  renderQuizzes();
+  loadFolderCount(activeFolderId);
+  toast(`Quiz "${title}" created! Use ＋ Add Q to add questions.`, 'success');
+
+  closeModal('modal-add-quiz-here');
+  document.getElementById('aqh-title').value = '';
+  if (statusEl) statusEl.textContent = '';
+});
+
+document.getElementById('btn-aqh-cancel')?.addEventListener('click', () => closeModal('modal-add-quiz-here'));
+
 let activeFolderName = '';
 let quizzesCache     = [];
 
@@ -3317,11 +3367,6 @@ document.getElementById('btn-add-subfolder')?.addEventListener('click', async ()
 });
 
 // Override oldstatic: pre-select current subfolder in create view
-document.getElementById('btn-add-quiz-here')?.addEventListener('click', e => {
-  e.stopImmediatePropagation();
-  showView('create');
-  updateTargetFolderSelect();
-}, true);
 
 document.getElementById('btn-share-chapter')?.addEventListener('click', () => {
   setupShareChapterModal();
