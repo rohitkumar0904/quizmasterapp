@@ -109,7 +109,16 @@ document.getElementById('btn-create-folder').addEventListener('click', () => {
   closeModal('modal-folder');
   document.getElementById('new-folder-name').value = '';
 });
-document.getElementById('btn-add-quiz-here').addEventListener('click', () => showView('create'));
+document.getElementById('btn-add-quiz-here').addEventListener('click', () => {
+  openModal('modal-add-quiz-here');
+  document.getElementById('aqh-title').value = '';
+  document.getElementById('aqh-status').textContent = '';
+  setTimeout(() => document.getElementById('aqh-title').focus(), 100);
+});
+
+document.getElementById('aqh-title')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-aqh-save')?.click(); }
+});
 
 // ── ADD QUESTION TO EXISTING QUIZ (from quiz-slip) ──────────
 document.addEventListener('click', e => {
