@@ -3,6 +3,9 @@
  * ====================================================
  * index.html mein app.js ke baad add karo:
  *   <script src="qm-sidebar-chat.js"></script>
+ *
+ * app.js mein loadFriends() ke andar friendsCache = friends; ke BAAD yeh line add karo:
+ *   window.friendsCache = friendsCache;
  */
 (function () {
   'use strict';
@@ -11,7 +14,6 @@
      CSS — exact tokens from style.css
   ══════════════════════════════════════════════════════════════ */
   const css = `
-    /* ── Sidebar Messages button ─────────────────────────────── */
     #qm-sc-btn {
       display: flex;
       align-items: center;
@@ -54,7 +56,6 @@
     }
     #qm-sc-nav-badge.show { display: flex; }
 
-    /* ── Overlay backdrop ────────────────────────────────────── */
     #qm-sc-overlay {
       display: none;
       position: fixed;
@@ -64,7 +65,6 @@
     }
     #qm-sc-overlay.open { display: block; }
 
-    /* ── Drawer ──────────────────────────────────────────────── */
     #qm-sc-drawer {
       position: fixed;
       top: 0; right: 0; bottom: 0;
@@ -80,7 +80,6 @@
     }
     #qm-sc-drawer.open { transform: translateX(0); }
 
-    /* ── Drawer header ───────────────────────────────────────── */
     #qm-sc-header {
       display: flex;
       align-items: center;
@@ -131,7 +130,6 @@
     }
     #qm-sc-close-btn:hover { background: var(--line); color: var(--ink); }
 
-    /* ── Conversation list ───────────────────────────────────── */
     #qm-sc-conv-list {
       flex: 1;
       overflow-y: auto;
@@ -151,7 +149,6 @@
     .qm-sc-row:hover { background: var(--paper-raised); }
     .qm-sc-row.active { background: var(--saffron-soft); border-left: 3px solid var(--saffron); }
 
-    /* Avatar — matches .friend-avatar exactly */
     .qm-sc-avatar {
       width: 40px;
       height: 40px;
@@ -203,7 +200,6 @@
       color: var(--slate);
       font-family: var(--font-mono);
     }
-    /* Badge — matches .nav-badge exactly */
     .qm-sc-unread {
       background: var(--error);
       color: #fff;
@@ -221,7 +217,6 @@
     }
     .qm-sc-unread.show { display: flex; }
 
-    /* ── Empty / loading states ──────────────────────────────── */
     .qm-sc-empty, .qm-sc-loading {
       display: flex;
       flex-direction: column;
@@ -241,7 +236,6 @@
     }
     .qm-sc-empty p { font-size: 0.82rem; margin: 0; color: var(--slate); }
 
-    /* ── Chat inside drawer ──────────────────────────────────── */
     #qm-sc-chat-wrap {
       display: none;
       flex: 1;
@@ -250,7 +244,6 @@
     }
     #qm-sc-chat-wrap.visible { display: flex; }
 
-    /* Dark mode ─────────────────────────────────────────────── */
     [data-theme="dark"] #qm-sc-drawer {
       background: var(--paper);
       border-left-color: var(--line);
@@ -278,19 +271,17 @@
   /* ══════════════════════════════════════════════════════════════
      STATE
   ══════════════════════════════════════════════════════════════ */
-  // { friendId: { name, initials, lastMsg, lastTime, unread } }
   let _convData     = {};
-  let _convOrder    = [];      // friendId[] sorted newest first
-  let _convToFriend = {};      // convId → friendId
+  let _convOrder    = [];
+  let _convToFriend = {};
   let _globalCh     = null;
   let _loaded       = false;
-  let _activeFriend = null;    // currently open chat friendId
+  let _activeFriend = null;
 
   /* ══════════════════════════════════════════════════════════════
      INJECT HTML
   ══════════════════════════════════════════════════════════════ */
   function injectHTML() {
-    // Sidebar button — insert after Friends nav link
     const nav = document.querySelector('.sidebar-nav');
     if (nav) {
       const btn = document.createElement('button');
@@ -307,23 +298,16 @@
         : nav.prepend(btn);
     }
 
-    // Drawer + overlay
     document.body.insertAdjacentHTML('beforeend', `
       <div id="qm-sc-overlay"></div>
       <div id="qm-sc-drawer" role="dialog" aria-modal="true" aria-label="Messages">
-
         <div id="qm-sc-header">
           <button id="qm-sc-back-btn" title="Back">← Back</button>
           <h3 id="qm-sc-title">💬 Messages</h3>
           <button id="qm-sc-close-btn" title="Close">✕</button>
         </div>
-
-        <!-- Conversation list view -->
         <div id="qm-sc-conv-list"></div>
-
-        <!-- Chat view (cloned chat panel lives here) -->
         <div id="qm-sc-chat-wrap"></div>
-
       </div>
     `);
 
@@ -345,14 +329,26 @@
     document.getElementById('qm-sc-overlay').classList.add('open');
     document.getElementById('qm-sc-drawer').classList.add('open');
     if (typeof closeSidebar === 'function') closeSidebar();
-    if (!_loaded) loadConvList();
-    else showList();
+
+    if (!_loaded) {
+      // Show loading state immediately
+      const list = document.getElementById('qm-sc-conv-list');
+      if (list) {
+        list.innerHTML = `
+          <div class="qm-sc-loading">
+            <span class="qm-sc-empty-icon">⏳</span>
+            <strong>Loading…</strong>
+          </div>`;
+      }
+      loadConvList();
+    } else {
+      showList();
+    }
   }
 
   function closeDrawer() {
     document.getElementById('qm-sc-overlay').classList.remove('open');
     document.getElementById('qm-sc-drawer').classList.remove('open');
-    // Restore chat panel to friends section when drawer closes
     _restoreChatPanel();
     _activeFriend = null;
     if (window._chatActiveFriendId) {
@@ -381,25 +377,20 @@
     _activeFriend = friendId;
     window._chatActiveFriendId = friendId;
 
-    // Clear unread for this friend
     if (_convData[friendId]) _convData[friendId].unread = 0;
     updateNavBadge();
 
-    // Mark active row
     document.querySelectorAll('.qm-sc-row').forEach(r =>
       r.classList.toggle('active', r.dataset.friendId === friendId));
 
-    // Switch views
     document.getElementById('qm-sc-conv-list').style.display = 'none';
     document.getElementById('qm-sc-chat-wrap').classList.add('visible');
     document.getElementById('qm-sc-back-btn').classList.add('visible');
     document.getElementById('qm-sc-title').textContent = friendName;
 
-    // Move existing #chat-panel into our drawer chat-wrap
     const chatWrap  = document.getElementById('qm-sc-chat-wrap');
     const chatPanel = document.getElementById('chat-panel');
     if (chatPanel && chatWrap) {
-      // Reset chat-panel inline styles so it fills the wrap naturally
       chatPanel.style.cssText = `
         position: static;
         width: 100%;
@@ -413,16 +404,13 @@
       chatWrap.appendChild(chatPanel);
     }
 
-    // Open / load messages via app.js's openChat
     if (typeof window.openChat === 'function') {
       window.openChat(friendId, friendName);
     }
 
-    // Mark DB messages seen
     _markSeen(friendId);
   }
 
-  /* ── Move chat-panel back to #view-friends when closing ─────── */
   function _restoreChatPanel() {
     const chatPanel  = document.getElementById('chat-panel');
     const friendsSec = document.getElementById('view-friends');
@@ -435,19 +423,56 @@
 
   /* ══════════════════════════════════════════════════════════════
      LOAD CONVERSATION DATA
+     FIX: friendsCache window pe nahi hota — multiple fallbacks
   ══════════════════════════════════════════════════════════════ */
+  async function _getFriends() {
+    // Fallback 1: window.friendsCache (agar app.js ne expose kiya)
+    if (window.friendsCache?.length) return window.friendsCache;
+
+    // Fallback 2: loadFriends() call karo aur wait karo
+    if (typeof window.loadFriends === 'function') {
+      await window.loadFriends();
+      await new Promise(r => setTimeout(r, 300));
+      if (window.friendsCache?.length) return window.friendsCache;
+    }
+
+    // Fallback 3: Direct Supabase se fetch karo
+    if (!window.sb || !window.currentUser) return [];
+    try {
+      const uid = window.currentUser.id;
+      const [{ data: sent }, { data: received }] = await Promise.all([
+        window.sb.from('friendships')
+          .select('*, profiles!friendships_addressee_id_fkey(*)')
+          .eq('requester_id', uid)
+          .eq('status', 'accepted'),
+        window.sb.from('friendships')
+          .select('*, profiles!friendships_requester_id_fkey(*)')
+          .eq('addressee_id', uid)
+          .eq('status', 'accepted'),
+      ]);
+      const friends = [
+        ...(sent || []).map(r => r.profiles),
+        ...(received || []).map(r => r.profiles),
+      ].filter(Boolean);
+
+      // Cache karo window pe bhi
+      window.friendsCache = friends;
+      return friends;
+    } catch (e) {
+      console.warn('[qm-sidebar-chat] Direct friends fetch failed:', e);
+      return [];
+    }
+  }
+
   async function loadConvList() {
     const user = window.currentUser;
     if (!user) return;
 
-    // Ensure friends are loaded
-    if (!window.friendsCache?.length && typeof window.loadFriends === 'function') {
-      await window.loadFriends();
-    }
-    const friends = window.friendsCache || [];
+    const friends = await _getFriends();
 
-    // Init _convData skeleton
+    // Skeleton init
     friends.forEach(f => {
+      if (!f?.id) return;
       const initials = (f.display_name || 'U')
         .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
       _convData[f.id] = {
@@ -486,7 +511,6 @@
       _convToFriend[c.id] = fid;
     });
 
-    // Last message per conversation
     const { data: msgs } = await window.sb
       .from('messages')
       .select('conversation_id, content, created_at, sender_id')
@@ -538,11 +562,14 @@
   }
 
   function _sortOrder(friends) {
-    _convOrder = friends.map(f => f.id).sort((a, b) => {
-      const ta = _convData[a]?.lastTime || '';
-      const tb = _convData[b]?.lastTime || '';
-      return tb.localeCompare(ta);
-    });
+    _convOrder = friends
+      .filter(f => f?.id)
+      .map(f => f.id)
+      .sort((a, b) => {
+        const ta = _convData[a]?.lastTime || '';
+        const tb = _convData[b]?.lastTime || '';
+        return tb.localeCompare(ta);
+      });
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -573,7 +600,7 @@
 
       const preview = d.lastMsg
         ? d.lastMsg.slice(0, 42) + (d.lastMsg.length > 42 ? '…' : '')
-        : 'Abhi koi message nahi';
+        : 'Tap karke chat shuru karo';
       const hasUnread = (d.unread || 0) > 0;
 
       row.innerHTML = `
@@ -608,13 +635,12 @@
         if (!msg || msg.sender_id === user.id) return;
 
         const fid = _convToFriend[msg.conversation_id];
-        if (!fid) { loadConvList(); return; } // new conversation
+        if (!fid) { _loaded = false; loadConvList(); return; }
         if (!_convData[fid]) return;
 
         _convData[fid].lastMsg  = msg.content;
         _convData[fid].lastTime = msg.created_at;
 
-        // Don't badge if this chat is active and drawer is open
         const drawerOpen = document.getElementById('qm-sc-drawer').classList.contains('open');
         if (drawerOpen && _activeFriend === fid) {
           window.sb.from('messages').update({ seen: true }).eq('id', msg.id);
@@ -622,13 +648,11 @@
           _convData[fid].unread = (_convData[fid].unread || 0) + 1;
         }
 
-        // Bubble to top
         _convOrder = [fid, ..._convOrder.filter(id => id !== fid)];
 
-        // Re-render list if visible
-        const listVisible = document.getElementById('qm-sc-conv-list').style.display !== 'none'
-          && document.getElementById('qm-sc-conv-list').innerHTML !== '';
-        if (drawerOpen && !_activeFriend) renderConvList();
+        const listEl = document.getElementById('qm-sc-conv-list');
+        const listVisible = listEl && listEl.style.display !== 'none' && listEl.innerHTML !== '';
+        if (drawerOpen && !_activeFriend && listVisible) renderConvList();
         else updateNavBadge();
       })
       .subscribe();
@@ -664,7 +688,7 @@
   }
 
   function _esc(s) {
-    return String(s)
+    return String(s || '')
       .replace(/&/g,'&amp;').replace(/</g,'&lt;')
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
@@ -675,34 +699,53 @@
   function boot() {
     injectHTML();
 
-    // Wait for currentUser then pre-load convs
-    const t = setInterval(() => {
+    // Wait for currentUser — friendsCache ab _getFriends() handle karta hai
+    const t = setInterval(async () => {
       if (!window.currentUser) return;
       clearInterval(t);
-      loadConvList();
+      await loadConvList();
     }, 400);
 
-    // Also decorate renderFriends so friendsCache stays fresh
+    // renderFriends override — naye friends aane pe _convData update karo
     const _origRF = window.renderFriends;
     if (typeof _origRF === 'function') {
       window.renderFriends = function (...args) {
         _origRF(...args);
-        // Rebuild initials if new friends added
-        (window.friendsCache || []).forEach(f => {
-          if (!_convData[f.id]) {
-            const initials = (f.display_name || 'U')
-              .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-            _convData[f.id] = { name: f.display_name, initials, lastMsg: '', lastTime: null, unread: 0 };
-          }
+        const friends = window.friendsCache || [];
+        friends.forEach(f => {
+          if (!f?.id || _convData[f.id]) return;
+          const initials = (f.display_name || 'U')
+            .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+          _convData[f.id] = { name: f.display_name, initials, lastMsg: '', lastTime: null, unread: 0 };
         });
+        // Agar drawer open hai aur list dikh rahi hai toh re-render karo
+        const drawer = document.getElementById('qm-sc-drawer');
+        const listEl = document.getElementById('qm-sc-conv-list');
+        if (drawer?.classList.contains('open') && listEl?.style.display !== 'none') {
+          _sortOrder(friends);
+          renderConvList();
+        }
+      };
+    }
+
+    // loadFriends override — friendsCache update hone pe window pe bhi sync karo
+    const _origLF = window.loadFriends;
+    if (typeof _origLF === 'function') {
+      window.loadFriends = async function (...args) {
+        await _origLF(...args);
+        // window.friendsCache sync (agar app.js ne nahi kiya)
+        if (!window.friendsCache?.length && window.friendsCache !== undefined) {
+          // app.js mein friendsCache let hai — direct access nahi, isliye
+          // renderFriends override usse handle kar lega
+        }
       };
     }
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(boot, 100));
+    document.addEventListener('DOMContentLoaded', () => setTimeout(boot, 150));
   } else {
-    setTimeout(boot, 100);
+    setTimeout(boot, 150);
   }
 
 })();
