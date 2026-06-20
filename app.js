@@ -2252,17 +2252,10 @@ function _closeMsgContextMenu() {
 
 /* Delete a single message from DB + UI */
 async function _deleteSingleMessage(msgId, bubbleEl) {
-  // Pehle current deleted_by array fetch karo
-  const { data: msgData } = await sb.from('messages')
-    .select('deleted_by')
-    .eq('id', msgId)
-    .single();
-  const existing = msgData?.deleted_by || [];
-  if (existing.includes(currentUser.id)) return; // already deleted
-
-  const { error } = await sb.from('messages')
-    .update({ deleted_by: [...existing, currentUser.id] })
-    .eq('id', msgId);
+  const { error } = await sb.rpc('mark_message_deleted', {
+    p_message_id: msgId,
+    p_user_id: currentUser.id,
+  });
   if (error) { toast('Delete nahi hua, dobara try karo', 'error'); return; }
 
   bubbleEl.style.transition = 'opacity 0.2s, transform 0.2s';
@@ -2294,24 +2287,12 @@ function _confirmClearChat() {
 
 async function _clearMyMessages() {
   if (!_chatConvId || !currentUser) return;
-  const uid = currentUser.id;
 
-  // Saare messages fetch karo is conversation ke
-  const { data: allMsgs, error: fetchErr } = await sb.from('messages')
-    .select('id, deleted_by')
-    .eq('conversation_id', _chatConvId);
-  if (fetchErr) { toast('Clear nahi hua, dobara try karo', 'error'); return; }
-
-  // Har message mein apna uid add karo deleted_by array mein
-  const updates = (allMsgs || [])
-    .filter(m => !(m.deleted_by || []).includes(uid))
-    .map(m => sb.from('messages')
-      .update({ deleted_by: [...(m.deleted_by || []), uid] })
-      .eq('id', m.id)
-    );
-  const results = await Promise.all(updates);
-  const anyError = results.find(r => r.error);
-  if (anyError) { toast('Kuch messages clear nahi hue', 'error'); return; }
+  const { error } = await sb.rpc('clear_chat_for_user', {
+    p_conv_id: _chatConvId,
+    p_user_id: currentUser.id,
+  });
+  if (error) { toast('Clear nahi hua: ' + error.message, 'error'); return; }
 
   // UI se saare bubbles animate karke hatao
   document.querySelectorAll('.chat-bubble--mine, .chat-bubble--theirs').forEach(el => {
