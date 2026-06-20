@@ -1278,6 +1278,34 @@ Rules:
       <input type="number" id="add-question-position" min="1" placeholder="e.g. 3 (1-based)">
     </label>
 
+    <!-- AI Prompt Generator -->
+    <div class="ai-prompt-box">
+      <div class="ai-prompt-head">
+        <span class="ai-prompt-icon">✨</span>
+        <div>
+          <strong>Generate Questions with AI</strong>
+          <p>Copy this prompt → paste in Claude / ChatGPT → paste JSON above</p>
+        </div>
+        <button class="btn btn--ghost btn--small" id="btn-copy-prompt-aq">Copy Prompt</button>
+      </div>
+      <pre class="ai-prompt-text" id="ai-prompt-text-aq">Generate 20 multiple-choice questions on the topic: [YOUR TOPIC].
+
+Format as a JSON array only (no extra text):
+[
+  {
+    "question": "...",
+    "options": ["A", "B", "C", "D"],
+    "correctIndex": 0,
+    "explanation": "..."
+  }
+]
+
+Rules:
+- correctIndex is 0-based (A=0, B=1, C=2, D=3)
+- Include a brief explanation for each answer
+- SSC CGL difficulty level</pre>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn--ghost" id="btn-cancel-add-question">Cancel</button>
       <button class="btn btn--primary" id="btn-import-add-question">⇪ Import</button>
