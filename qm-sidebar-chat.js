@@ -523,13 +523,37 @@
   function boot() {
     injectHTML();
 
-    // Wait for currentUser
-    const t = setInterval(async () => {
-      if (!window.currentUser) return;
-      clearInterval(t);
-      console.log('[qm-sc] boot: currentUser found, loading convs...');
-      await loadConvList();
-    }, 400);
+    if (!window.sb) {
+      console.warn('[qm-sc] no sb client found');
+      return;
+    }
+
+    // onAuthStateChange — fires on login, logout, AND existing session restore (INITIAL_SESSION)
+    window.sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (!session?.user) return;
+
+        // Sync currentUser so rest of the app stays consistent
+        if (!window.currentUser) window.currentUser = session.user;
+
+        if (!_loaded && !_loading) {
+          console.log('[qm-sc] auth ready (' + event + '), loading convs...');
+          await loadConvList();
+        }
+      }
+
+      if (event === 'SIGNED_OUT') {
+        _convData     = {};
+        _convOrder    = [];
+        _convToFriend = {};
+        _loaded       = false;
+        _loading      = false;
+        _activeFriend = null;
+        window._chatActiveFriendId = null;
+        if (_globalCh) { window.sb.removeChannel(_globalCh); _globalCh = null; }
+        updateNavBadge();
+      }
+    });
 
     // Hook into renderFriends so new friends appear instantly
     const _origRF = window.renderFriends;
