@@ -2017,8 +2017,8 @@ async function openChat(friendId, friendName) {
   if (panel) {
     document.getElementById('chat-panel-title').textContent = friendName;
     panel.classList.add('chat-panel--open');
+    _injectClearChatBtn();
   }
-  _injectEmojiPicker();
 
   await loadMessages(_chatConvId);
   _subscribeChatRealtime(_chatConvId);
@@ -2056,6 +2056,22 @@ function _appendMessageBubble(msg) {
   el.dataset.msgId = msg.id;
   const time = new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `<span class="chat-bubble-text">${escHtml(msg.content)}</span><span class="chat-bubble-time">${time}</span>`;
+
+  // Long press (mobile) + right-click (desktop) → delete context menu
+  if (mine) {
+    let pressTimer = null;
+    const showMenu = (e) => {
+      e.preventDefault();
+      _showMsgContextMenu(el, msg.id);
+    };
+    el.addEventListener('contextmenu', showMenu);
+    el.addEventListener('touchstart', () => {
+      pressTimer = setTimeout(() => _showMsgContextMenu(el, msg.id), 600);
+    }, { passive: true });
+    el.addEventListener('touchend',   () => clearTimeout(pressTimer));
+    el.addEventListener('touchmove',  () => clearTimeout(pressTimer));
+  }
+
   list.appendChild(el);
   list.scrollTop = list.scrollHeight;
 }
@@ -2072,213 +2088,6 @@ async function sendMessage() {
     content: text,
   });
   if (error) { toast('Failed to send.', 'error'); input.value = text; }
-}
-
-// ── EMOJI PICKER ─────────────────────────────────────────────────
-const _EMOJI_CATS = [
-  { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'] },
-  { label: '👍', emojis: ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👀','👁️','👅','👄','💋','🦷','👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','🙍','🙎','🙅','🙆','💁','🙋','🧏','🙇','🤦','🤷'] },
-  { label: '❤️', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🔕'] },
-  { label: '🐶', emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🦟','🦗','🪳','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🦭','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿️','🦔'] },
-  { label: '🍎', emojis: ['🍏','🍎','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🧃','🥤','🧋','☕','🍵','🫖','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽️','🥢','🧂'] },
-  { label: '⚽', emojis: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🪅','🪆','🎮','🕹️'] },
-  { label: '🚗', emojis: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','🛟','⛵','🛶','🚤','🛳️','⛴️','🛥️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🪐','🌍','🌎','🌏','🌐','🗺️','🧭','🧱','🏗️','🪞','🪟','🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏬','🏭','🏯','🏰','💒','🗼','🗽','⛪','🕌','🛕','🕍','⛩️','🕋','⛲','⛺','🌁','🌃','🏙️','🌄','🌅','🌆','🌇','🌉','🌌','🎠','🛝','🎡','🎢','💈','🎪'] },
-];
-
-let _emojiPickerOpen = false;
-
-function _injectEmojiPicker() {
-  if (document.getElementById('qm-emoji-btn')) return;
-
-  // CSS inject (once)
-  if (!document.getElementById('qm-emoji-css')) {
-    const s = document.createElement('style');
-    s.id = 'qm-emoji-css';
-    s.textContent = `
-      #qm-emoji-btn {
-        background: none; border: none; cursor: pointer;
-        font-size: 1.3rem; line-height: 1; padding: 0 6px 0 4px;
-        color: var(--slate, #888); flex-shrink: 0;
-        transition: transform 0.15s;
-      }
-      #qm-emoji-btn:hover { transform: scale(1.2); }
-      #qm-emoji-picker {
-        position: absolute; bottom: calc(100% + 8px); left: 0;
-        width: 300px; background: var(--paper, #fff);
-        border: 1px solid var(--line, #ddd);
-        border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-        z-index: 9999; overflow: hidden;
-        display: none; flex-direction: column;
-      }
-      #qm-emoji-picker.open { display: flex; }
-      #qm-emoji-search {
-        border: none; border-bottom: 1px solid var(--line, #ddd);
-        padding: 8px 12px; font-size: 0.85rem; outline: none;
-        background: var(--paper-raised, #f7f5f0);
-        color: var(--ink, #222); width: 100%; box-sizing: border-box;
-      }
-      #qm-emoji-cats {
-        display: flex; gap: 2px; padding: 6px 8px;
-        border-bottom: 1px solid var(--line, #ddd);
-        overflow-x: auto; scrollbar-width: none;
-      }
-      #qm-emoji-cats::-webkit-scrollbar { display: none; }
-      .qm-ec-btn {
-        background: none; border: none; cursor: pointer;
-        font-size: 1.1rem; padding: 4px 6px; border-radius: 6px;
-        transition: background 0.1s; flex-shrink: 0;
-      }
-      .qm-ec-btn:hover, .qm-ec-btn.active { background: var(--saffron-soft, rgba(255,200,50,0.2)); }
-      #qm-emoji-grid {
-        display: grid; grid-template-columns: repeat(8, 1fr);
-        gap: 2px; padding: 8px; max-height: 200px;
-        overflow-y: auto; scrollbar-width: thin;
-      }
-      .qm-eg-btn {
-        background: none; border: none; cursor: pointer;
-        font-size: 1.25rem; padding: 4px; border-radius: 6px;
-        transition: background 0.1s; line-height: 1; text-align: center;
-      }
-      .qm-eg-btn:hover { background: var(--saffron-soft, rgba(255,200,50,0.2)); }
-      #qm-emoji-recent {
-        padding: 6px 8px 4px; font-size: 0.68rem;
-        color: var(--slate, #888); font-family: var(--font-body, sans-serif);
-        display: none;
-      }
-      #qm-emoji-recent.show { display: block; }
-    `;
-    document.head.appendChild(s);
-  }
-
-  // Find chat footer / input area
-  const chatInput = document.getElementById('chat-input');
-  if (!chatInput) return;
-  const footer = chatInput.closest('.chat-footer') || chatInput.parentElement;
-  if (!footer) return;
-  footer.style.position = 'relative';
-
-  // Emoji button
-  const btn = document.createElement('button');
-  btn.id = 'qm-emoji-btn';
-  btn.title = 'Emoji';
-  btn.textContent = '😊';
-  btn.type = 'button';
-  footer.insertBefore(btn, chatInput);
-
-  // Picker container
-  const picker = document.createElement('div');
-  picker.id = 'qm-emoji-picker';
-  picker.innerHTML = `
-    <input id="qm-emoji-search" type="text" placeholder="Search emoji…" autocomplete="off"/>
-    <div id="qm-emoji-recent"></div>
-    <div id="qm-emoji-cats"></div>
-    <div id="qm-emoji-grid"></div>
-  `;
-  footer.appendChild(picker);
-
-  // Build category tabs
-  const catsEl = picker.querySelector('#qm-emoji-cats');
-  _EMOJI_CATS.forEach((cat, i) => {
-    const b = document.createElement('button');
-    b.className = 'qm-ec-btn' + (i === 0 ? ' active' : '');
-    b.textContent = cat.label;
-    b.title = cat.label;
-    b.type = 'button';
-    b.addEventListener('click', () => {
-      catsEl.querySelectorAll('.qm-ec-btn').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      _renderEmojiGrid(cat.emojis);
-      picker.querySelector('#qm-emoji-search').value = '';
-    });
-    catsEl.appendChild(b);
-  });
-
-  _renderEmojiGrid(_EMOJI_CATS[0].emojis);
-  _updateRecentEmojis();
-
-  // Search
-  picker.querySelector('#qm-emoji-search').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
-    if (!q) { _renderEmojiGrid(_EMOJI_CATS[0].emojis); return; }
-    const all = _EMOJI_CATS.flatMap(c => c.emojis);
-    _renderEmojiGrid(all.filter(em => em.includes(q)));
-  });
-
-  // Toggle
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    _emojiPickerOpen = !_emojiPickerOpen;
-    picker.classList.toggle('open', _emojiPickerOpen);
-    if (_emojiPickerOpen) {
-      _updateRecentEmojis();
-      picker.querySelector('#qm-emoji-search').focus();
-    }
-  });
-
-  // Close on outside click
-  document.addEventListener('click', (e) => {
-    if (_emojiPickerOpen && !picker.contains(e.target) && e.target !== btn) {
-      _emojiPickerOpen = false;
-      picker.classList.remove('open');
-    }
-  });
-}
-
-function _renderEmojiGrid(emojis) {
-  const grid = document.getElementById('qm-emoji-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-  emojis.forEach(em => {
-    const b = document.createElement('button');
-    b.className = 'qm-eg-btn';
-    b.textContent = em;
-    b.type = 'button';
-    b.addEventListener('click', () => _insertEmoji(em));
-    grid.appendChild(b);
-  });
-}
-
-function _insertEmoji(em) {
-  const input = document.getElementById('chat-input');
-  if (!input) return;
-  const start = input.selectionStart;
-  const end   = input.selectionEnd;
-  const val   = input.value;
-  input.value = val.slice(0, start) + em + val.slice(end);
-  input.selectionStart = input.selectionEnd = start + em.length;
-  input.focus();
-
-  // Save to recent (localStorage, max 24)
-  try {
-    let recent = JSON.parse(localStorage.getItem('qm_recent_emoji') || '[]');
-    recent = [em, ...recent.filter(x => x !== em)].slice(0, 24);
-    localStorage.setItem('qm_recent_emoji', JSON.stringify(recent));
-  } catch(e) {}
-  _updateRecentEmojis();
-}
-
-function _updateRecentEmojis() {
-  const recentEl = document.getElementById('qm-emoji-recent');
-  const grid     = document.getElementById('qm-emoji-grid');
-  if (!recentEl || !grid) return;
-  try {
-    const recent = JSON.parse(localStorage.getItem('qm_recent_emoji') || '[]');
-    if (!recent.length) { recentEl.classList.remove('show'); return; }
-    recentEl.classList.add('show');
-    recentEl.textContent = 'Recently used';
-    // Prepend recent row above grid
-    const recentRow = document.createElement('div');
-    recentRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:2px;padding:0 8px 4px;';
-    recent.forEach(em => {
-      const b = document.createElement('button');
-      b.className = 'qm-eg-btn';
-      b.textContent = em;
-      b.type = 'button';
-      b.addEventListener('click', () => _insertEmoji(em));
-      recentRow.appendChild(b);
-    });
-    grid.parentElement.insertBefore(recentRow, grid);
-  } catch(e) {}
 }
 
 function _subscribeChatRealtime(convId) {
@@ -2304,6 +2113,173 @@ function closeChat() {
   if (panel) panel.classList.remove('chat-panel--open');
   if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
   _chatConvId = null;
+}
+
+// ── DELETE / CLEAR CHAT ──────────────────────────────────────────
+
+/* CSS (inject once) */
+(function _injectDeleteCss() {
+  if (document.getElementById('qm-del-css')) return;
+  const s = document.createElement('style');
+  s.id = 'qm-del-css';
+  s.textContent = `
+    #qm-msg-ctx-menu {
+      position: fixed; z-index: 99999;
+      background: var(--paper, #fff);
+      border: 1px solid var(--line, #ddd);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+      padding: 4px 0; min-width: 150px;
+      animation: qm-ctx-in 0.12s ease;
+    }
+    @keyframes qm-ctx-in {
+      from { opacity:0; transform: scale(0.92); }
+      to   { opacity:1; transform: scale(1); }
+    }
+    #qm-msg-ctx-menu button {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; background: none; border: none;
+      padding: 10px 16px; font-size: 0.88rem;
+      color: var(--error, #e53e3e); cursor: pointer;
+      font-family: var(--font-body, sans-serif);
+      transition: background 0.1s;
+    }
+    #qm-msg-ctx-menu button:hover { background: var(--paper-raised, #f5f5f5); }
+
+    .qm-clear-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--slate, #888); font-size: 1rem; padding: 4px 6px;
+      border-radius: 6px; transition: all 0.15s; line-height: 1;
+      flex-shrink: 0;
+    }
+    .qm-clear-btn:hover { background: var(--line, #eee); color: var(--error, #e53e3e); }
+
+    .qm-del-confirm {
+      position: fixed; inset: 0; z-index: 99998;
+      background: rgba(10,15,25,0.5);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .qm-del-confirm-box {
+      background: var(--paper, #fff);
+      border-radius: 14px; padding: 1.5rem 1.8rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      max-width: 320px; width: 90%; text-align: center;
+      font-family: var(--font-body, sans-serif);
+    }
+    .qm-del-confirm-box p {
+      color: var(--ink, #222); font-size: 0.95rem; margin: 0 0 1.2rem;
+    }
+    .qm-del-confirm-box small {
+      display: block; color: var(--slate, #888);
+      font-size: 0.78rem; margin-top: -0.6rem; margin-bottom: 1.2rem;
+    }
+    .qm-del-confirm-actions {
+      display: flex; gap: 10px; justify-content: center;
+    }
+    .qm-del-confirm-actions button {
+      padding: 0.5rem 1.2rem; border-radius: 8px;
+      border: none; cursor: pointer; font-size: 0.88rem;
+      font-family: var(--font-body, sans-serif); font-weight: 600;
+    }
+    .qm-btn-cancel {
+      background: var(--paper-raised, #f0ede8); color: var(--ink, #222);
+    }
+    .qm-btn-delete {
+      background: var(--error, #e53e3e); color: #fff;
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+/* Inject 🗑️ button in chat header (called on every openChat) */
+function _injectClearChatBtn() {
+  if (document.getElementById('qm-clear-chat-btn')) return;
+  const header = document.querySelector('#chat-panel .chat-panel-header, #chat-panel .chat-header');
+  if (!header) return;
+  const btn = document.createElement('button');
+  btn.id = 'qm-clear-chat-btn';
+  btn.className = 'qm-clear-btn';
+  btn.title = 'Clear my messages';
+  btn.textContent = '🗑️';
+  btn.addEventListener('click', _confirmClearChat);
+  header.appendChild(btn);
+}
+
+/* Single message right-click / long-press context menu */
+function _showMsgContextMenu(bubbleEl, msgId) {
+  _closeMsgContextMenu();
+  const rect = bubbleEl.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.id = 'qm-msg-ctx-menu';
+  menu.innerHTML = `<button>🗑️ Delete message</button>`;
+  menu.querySelector('button').addEventListener('click', async () => {
+    _closeMsgContextMenu();
+    await _deleteSingleMessage(msgId, bubbleEl);
+  });
+
+  // Position near bubble, keep inside viewport
+  const top = Math.min(rect.bottom + 4, window.innerHeight - 80);
+  const left = Math.min(rect.left, window.innerWidth - 160);
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+  document.body.appendChild(menu);
+
+  // Close on outside click / scroll
+  setTimeout(() => {
+    document.addEventListener('click', _closeMsgContextMenu, { once: true });
+    document.addEventListener('scroll', _closeMsgContextMenu, { once: true, capture: true });
+  }, 10);
+}
+
+function _closeMsgContextMenu() {
+  document.getElementById('qm-msg-ctx-menu')?.remove();
+}
+
+/* Delete a single message from DB + UI */
+async function _deleteSingleMessage(msgId, bubbleEl) {
+  const { error } = await sb.from('messages').delete().eq('id', msgId);
+  if (error) { toast('Delete nahi hua, dobara try karo', 'error'); return; }
+  bubbleEl.style.transition = 'opacity 0.2s, transform 0.2s';
+  bubbleEl.style.opacity = '0';
+  bubbleEl.style.transform = 'scale(0.9)';
+  setTimeout(() => bubbleEl.remove(), 220);
+}
+
+/* Clear all MY messages in current conversation */
+function _confirmClearChat() {
+  const overlay = document.createElement('div');
+  overlay.className = 'qm-del-confirm';
+  overlay.innerHTML = `
+    <div class="qm-del-confirm-box">
+      <p>Apne saare messages delete karo?</p>
+      <small>Sirf tumhare messages hatenge — friend ko dikhte rahenge</small>
+      <div class="qm-del-confirm-actions">
+        <button class="qm-btn-cancel">Cancel</button>
+        <button class="qm-btn-delete">Delete karo</button>
+      </div>
+    </div>`;
+  overlay.querySelector('.qm-btn-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('.qm-btn-delete').addEventListener('click', async () => {
+    overlay.remove();
+    await _clearMyMessages();
+  });
+  document.body.appendChild(overlay);
+}
+
+async function _clearMyMessages() {
+  if (!_chatConvId || !currentUser) return;
+  const { error } = await sb.from('messages').delete()
+    .eq('conversation_id', _chatConvId)
+    .eq('sender_id', currentUser.id);
+  if (error) { toast('Clear nahi hua, dobara try karo', 'error'); return; }
+
+  // Remove only my bubbles from UI
+  document.querySelectorAll('.chat-bubble--mine').forEach(el => {
+    el.style.transition = 'opacity 0.15s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 160);
+  });
+  toast('Tumhare messages delete ho gaye', 'success');
 }
 
 async function loadUnreadCount() {
