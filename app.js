@@ -5131,3 +5131,14 @@ if (profileView && !document.getElementById('btn-reset-data')) {
   const profileCard = profileView.querySelector('.profile-card');
   if (profileCard) profileCard.appendChild(resetBtn);
 }
+
+// ── ADD QUESTION MODAL — Copy Prompt button ─────────────────
+document.getElementById('btn-copy-prompt-aq')?.addEventListener('click', () => {
+  const text = document.getElementById('ai-prompt-text-aq').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('btn-copy-prompt-aq');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  });
+});
