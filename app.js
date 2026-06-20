@@ -2604,6 +2604,7 @@ async function loadFriends() {
   ].filter(Boolean);
 
   friendsCache = friends;
+  window.friendsCache = friendsCache; // expose for qm-sidebar-chat
 
   // Build a flat list of { userId, status } for quick lookups in search/add-friend buttons
   friendshipsCache = [
