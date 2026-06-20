@@ -2,16 +2,18 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-const CACHE_STATIC = 'qm-static-v3'; // bump version
+const CACHE_STATIC = 'qm-static-v4';  // v3 → v4
+
 const SHELL_URLS = [
   '/',
   '/index.html',
+  '/index2.html',   // ← ADD
   '/app.js',
   '/oldstatic.js',
   '/pomodoro.js',
   '/pomodoro-race.js',
-  '/qm-cache.js',        // ← new
-  '/qm-sidebar-chat.js', // ← new
+  '/qm-cache.js',
+  '/qm-sidebar-chat.js',
   '/style.css',
   '/manifest.json',
   '/icon-192.png',
