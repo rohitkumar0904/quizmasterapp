@@ -1,0 +1,708 @@
+/**
+ * qm-sidebar-chat.js  —  WhatsApp-style Sidebar Chat
+ * ====================================================
+ * index.html mein app.js ke baad add karo:
+ *   <script src="qm-sidebar-chat.js"></script>
+ */
+(function () {
+  'use strict';
+
+  /* ══════════════════════════════════════════════════════════════
+     CSS — exact tokens from style.css
+  ══════════════════════════════════════════════════════════════ */
+  const css = `
+    /* ── Sidebar Messages button ─────────────────────────────── */
+    #qm-sc-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0.85rem;
+      border-radius: var(--radius-sm);
+      color: rgba(237,230,216,0.7);
+      font-family: var(--font-body);
+      font-weight: 600;
+      font-size: 0.9rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    #qm-sc-btn:hover {
+      background: rgba(255,255,255,0.06);
+      color: #EDE6D8;
+    }
+    #qm-sc-btn .qm-sc-btn-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
+    #qm-sc-btn .qm-sc-btn-label { flex: 1; }
+    #qm-sc-nav-badge {
+      margin-left: auto;
+      background: var(--error);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0 3px;
+      font-family: var(--font-mono);
+      animation: qmsc-pop 0.22s ease;
+    }
+    #qm-sc-nav-badge.show { display: flex; }
+
+    /* ── Overlay backdrop ────────────────────────────────────── */
+    #qm-sc-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10,15,25,0.6);
+      z-index: 9000;
+    }
+    #qm-sc-overlay.open { display: block; }
+
+    /* ── Drawer ──────────────────────────────────────────────── */
+    #qm-sc-drawer {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: min(380px, 100vw);
+      background: var(--paper);
+      border-left: 1px solid var(--line);
+      box-shadow: var(--shadow-modal);
+      display: flex;
+      flex-direction: column;
+      z-index: 9001;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+    }
+    #qm-sc-drawer.open { transform: translateX(0); }
+
+    /* ── Drawer header ───────────────────────────────────────── */
+    #qm-sc-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 1rem 1.1rem 0.85rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper-raised);
+      flex-shrink: 0;
+    }
+    #qm-sc-title {
+      flex: 1;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--ink);
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #qm-sc-back-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--slate);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s;
+      font-family: var(--font-body);
+      flex-shrink: 0;
+    }
+    #qm-sc-back-btn:hover { color: var(--ink); background: var(--paper); }
+    #qm-sc-back-btn.visible { display: block; }
+    #qm-sc-close-btn {
+      background: none;
+      border: none;
+      color: var(--slate);
+      font-size: 1.05rem;
+      cursor: pointer;
+      padding: 0.2rem 0.4rem;
+      border-radius: var(--radius-sm);
+      line-height: 1;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #qm-sc-close-btn:hover { background: var(--line); color: var(--ink); }
+
+    /* ── Conversation list ───────────────────────────────────── */
+    #qm-sc-conv-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.35rem 0;
+    }
+
+    .qm-sc-row {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.8rem 1.1rem;
+      cursor: pointer;
+      transition: background 0.12s ease;
+      border-bottom: 1px solid var(--line);
+    }
+    .qm-sc-row:last-child { border-bottom: none; }
+    .qm-sc-row:hover { background: var(--paper-raised); }
+    .qm-sc-row.active { background: var(--saffron-soft); border-left: 3px solid var(--saffron); }
+
+    /* Avatar — matches .friend-avatar exactly */
+    .qm-sc-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--saffron);
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .qm-sc-info { flex: 1; min-width: 0; }
+    .qm-sc-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: var(--font-body);
+    }
+    .qm-sc-preview {
+      font-size: 0.78rem;
+      color: var(--slate);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+      font-family: var(--font-body);
+    }
+    .qm-sc-preview.unread {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .qm-sc-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .qm-sc-time {
+      font-size: 0.68rem;
+      color: var(--slate);
+      font-family: var(--font-mono);
+    }
+    /* Badge — matches .nav-badge exactly */
+    .qm-sc-unread {
+      background: var(--error);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0 3px;
+      font-family: var(--font-mono);
+      animation: qmsc-pop 0.22s ease;
+    }
+    .qm-sc-unread.show { display: flex; }
+
+    /* ── Empty / loading states ──────────────────────────────── */
+    .qm-sc-empty, .qm-sc-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      padding: 3rem 2rem;
+      text-align: center;
+      color: var(--slate);
+      font-family: var(--font-body);
+    }
+    .qm-sc-empty-icon { font-size: 2.2rem; }
+    .qm-sc-empty strong {
+      font-family: var(--font-display);
+      color: var(--ink-soft);
+      font-size: 0.95rem;
+    }
+    .qm-sc-empty p { font-size: 0.82rem; margin: 0; color: var(--slate); }
+
+    /* ── Chat inside drawer ──────────────────────────────────── */
+    #qm-sc-chat-wrap {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #qm-sc-chat-wrap.visible { display: flex; }
+
+    /* Dark mode ─────────────────────────────────────────────── */
+    [data-theme="dark"] #qm-sc-drawer {
+      background: var(--paper);
+      border-left-color: var(--line);
+    }
+    [data-theme="dark"] #qm-sc-header {
+      background: var(--paper-raised);
+      border-bottom-color: var(--line);
+    }
+    [data-theme="dark"] .qm-sc-row:hover { background: var(--paper-raised); }
+    [data-theme="dark"] .qm-sc-row.active { background: var(--saffron-soft); }
+    [data-theme="dark"] .qm-sc-row { border-bottom-color: var(--line); }
+    [data-theme="dark"] .qm-sc-avatar { background: var(--ink-soft); }
+
+    @keyframes qmsc-pop {
+      0%   { transform: scale(0.4); opacity: 0; }
+      65%  { transform: scale(1.25); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  `;
+
+  const styleEl = document.createElement('style');
+  styleEl.textContent = css;
+  document.head.appendChild(styleEl);
+
+  /* ══════════════════════════════════════════════════════════════
+     STATE
+  ══════════════════════════════════════════════════════════════ */
+  // { friendId: { name, initials, lastMsg, lastTime, unread } }
+  let _convData     = {};
+  let _convOrder    = [];      // friendId[] sorted newest first
+  let _convToFriend = {};      // convId → friendId
+  let _globalCh     = null;
+  let _loaded       = false;
+  let _activeFriend = null;    // currently open chat friendId
+
+  /* ══════════════════════════════════════════════════════════════
+     INJECT HTML
+  ══════════════════════════════════════════════════════════════ */
+  function injectHTML() {
+    // Sidebar button — insert after Friends nav link
+    const nav = document.querySelector('.sidebar-nav');
+    if (nav) {
+      const btn = document.createElement('button');
+      btn.id = 'qm-sc-btn';
+      btn.innerHTML = `
+        <span class="qm-sc-btn-icon">💬</span>
+        <span class="qm-sc-btn-label">Messages</span>
+        <span id="qm-sc-nav-badge"></span>
+      `;
+      btn.addEventListener('click', toggleDrawer);
+      const friendsLink = nav.querySelector('[data-view="friends"]');
+      friendsLink
+        ? friendsLink.insertAdjacentElement('afterend', btn)
+        : nav.prepend(btn);
+    }
+
+    // Drawer + overlay
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="qm-sc-overlay"></div>
+      <div id="qm-sc-drawer" role="dialog" aria-modal="true" aria-label="Messages">
+
+        <div id="qm-sc-header">
+          <button id="qm-sc-back-btn" title="Back">← Back</button>
+          <h3 id="qm-sc-title">💬 Messages</h3>
+          <button id="qm-sc-close-btn" title="Close">✕</button>
+        </div>
+
+        <!-- Conversation list view -->
+        <div id="qm-sc-conv-list"></div>
+
+        <!-- Chat view (cloned chat panel lives here) -->
+        <div id="qm-sc-chat-wrap"></div>
+
+      </div>
+    `);
+
+    document.getElementById('qm-sc-overlay').addEventListener('click', closeDrawer);
+    document.getElementById('qm-sc-close-btn').addEventListener('click', closeDrawer);
+    document.getElementById('qm-sc-back-btn').addEventListener('click', showList);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     DRAWER OPEN / CLOSE
+  ══════════════════════════════════════════════════════════════ */
+  function toggleDrawer() {
+    const drawer = document.getElementById('qm-sc-drawer');
+    if (drawer.classList.contains('open')) { closeDrawer(); return; }
+    openDrawer();
+  }
+
+  function openDrawer() {
+    document.getElementById('qm-sc-overlay').classList.add('open');
+    document.getElementById('qm-sc-drawer').classList.add('open');
+    if (typeof closeSidebar === 'function') closeSidebar();
+    if (!_loaded) loadConvList();
+    else showList();
+  }
+
+  function closeDrawer() {
+    document.getElementById('qm-sc-overlay').classList.remove('open');
+    document.getElementById('qm-sc-drawer').classList.remove('open');
+    // Restore chat panel to friends section when drawer closes
+    _restoreChatPanel();
+    _activeFriend = null;
+    if (window._chatActiveFriendId) {
+      window._chatActiveFriendId = null;
+      if (typeof closeChat === 'function') closeChat();
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     VIEWS — LIST vs CHAT
+  ══════════════════════════════════════════════════════════════ */
+  function showList() {
+    _restoreChatPanel();
+    _activeFriend = null;
+    window._chatActiveFriendId = null;
+    if (typeof closeChat === 'function') closeChat();
+
+    document.getElementById('qm-sc-conv-list').style.display = '';
+    document.getElementById('qm-sc-chat-wrap').classList.remove('visible');
+    document.getElementById('qm-sc-back-btn').classList.remove('visible');
+    document.getElementById('qm-sc-title').textContent = '💬 Messages';
+    renderConvList();
+  }
+
+  function showChat(friendId, friendName) {
+    _activeFriend = friendId;
+    window._chatActiveFriendId = friendId;
+
+    // Clear unread for this friend
+    if (_convData[friendId]) _convData[friendId].unread = 0;
+    updateNavBadge();
+
+    // Mark active row
+    document.querySelectorAll('.qm-sc-row').forEach(r =>
+      r.classList.toggle('active', r.dataset.friendId === friendId));
+
+    // Switch views
+    document.getElementById('qm-sc-conv-list').style.display = 'none';
+    document.getElementById('qm-sc-chat-wrap').classList.add('visible');
+    document.getElementById('qm-sc-back-btn').classList.add('visible');
+    document.getElementById('qm-sc-title').textContent = friendName;
+
+    // Move existing #chat-panel into our drawer chat-wrap
+    const chatWrap  = document.getElementById('qm-sc-chat-wrap');
+    const chatPanel = document.getElementById('chat-panel');
+    if (chatPanel && chatWrap) {
+      // Reset chat-panel inline styles so it fills the wrap naturally
+      chatPanel.style.cssText = `
+        position: static;
+        width: 100%;
+        height: 100%;
+        flex: 1;
+        transform: none;
+        box-shadow: none;
+        border-left: none;
+      `;
+      chatPanel.classList.add('chat-panel--open');
+      chatWrap.appendChild(chatPanel);
+    }
+
+    // Open / load messages via app.js's openChat
+    if (typeof window.openChat === 'function') {
+      window.openChat(friendId, friendName);
+    }
+
+    // Mark DB messages seen
+    _markSeen(friendId);
+  }
+
+  /* ── Move chat-panel back to #view-friends when closing ─────── */
+  function _restoreChatPanel() {
+    const chatPanel  = document.getElementById('chat-panel');
+    const friendsSec = document.getElementById('view-friends');
+    if (chatPanel && friendsSec && chatPanel.parentElement?.id === 'qm-sc-chat-wrap') {
+      chatPanel.style.cssText = '';
+      chatPanel.classList.remove('chat-panel--open');
+      friendsSec.appendChild(chatPanel);
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     LOAD CONVERSATION DATA
+  ══════════════════════════════════════════════════════════════ */
+  async function loadConvList() {
+    const user = window.currentUser;
+    if (!user) return;
+
+    // Ensure friends are loaded
+    if (!window.friendsCache?.length && typeof window.loadFriends === 'function') {
+      await window.loadFriends();
+    }
+    const friends = window.friendsCache || [];
+
+    // Init _convData skeleton
+    friends.forEach(f => {
+      const initials = (f.display_name || 'U')
+        .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      _convData[f.id] = {
+        name:     f.display_name || 'Friend',
+        initials,
+        lastMsg:  _convData[f.id]?.lastMsg  || '',
+        lastTime: _convData[f.id]?.lastTime || null,
+        unread:   _convData[f.id]?.unread   || 0,
+      };
+    });
+
+    await Promise.all([
+      _fetchConversations(user, friends),
+      _fetchUnread(user),
+    ]);
+
+    _sortOrder(friends);
+    _loaded = true;
+    renderConvList();
+    _subscribeGlobal(user);
+  }
+
+  async function _fetchConversations(user, friends) {
+    if (!friends.length || !window.sb) return;
+
+    const { data: convs } = await window.sb
+      .from('conversations')
+      .select('id, user1_id, user2_id')
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+    if (!convs?.length) return;
+
+    _convToFriend = {};
+    convs.forEach(c => {
+      const fid = c.user1_id === user.id ? c.user2_id : c.user1_id;
+      _convToFriend[c.id] = fid;
+    });
+
+    // Last message per conversation
+    const { data: msgs } = await window.sb
+      .from('messages')
+      .select('conversation_id, content, created_at, sender_id')
+      .in('conversation_id', convs.map(c => c.id))
+      .order('created_at', { ascending: false })
+      .limit(convs.length * 5);
+
+    const seen = new Set();
+    (msgs || []).forEach(m => {
+      if (seen.has(m.conversation_id)) return;
+      seen.add(m.conversation_id);
+      const fid = _convToFriend[m.conversation_id];
+      if (!fid || !_convData[fid]) return;
+      const mine = m.sender_id === user.id;
+      _convData[fid].lastMsg  = (mine ? 'You: ' : '') + m.content;
+      _convData[fid].lastTime = m.created_at;
+    });
+  }
+
+  async function _fetchUnread(user) {
+    if (!window.sb) return;
+    const convIds = Object.keys(_convToFriend);
+    if (!convIds.length) return;
+
+    const { data } = await window.sb
+      .from('messages')
+      .select('conversation_id')
+      .in('conversation_id', convIds)
+      .eq('seen', false)
+      .neq('sender_id', user.id);
+
+    Object.keys(_convData).forEach(fid => { _convData[fid].unread = 0; });
+    (data || []).forEach(m => {
+      const fid = _convToFriend[m.conversation_id];
+      if (fid && _convData[fid]) _convData[fid].unread++;
+    });
+  }
+
+  async function _markSeen(friendId) {
+    if (!window.sb || !window.currentUser) return;
+    const convId = Object.keys(_convToFriend).find(k => _convToFriend[k] === friendId);
+    if (!convId) return;
+    await window.sb
+      .from('messages')
+      .update({ seen: true })
+      .eq('conversation_id', convId)
+      .eq('seen', false)
+      .neq('sender_id', window.currentUser.id);
+  }
+
+  function _sortOrder(friends) {
+    _convOrder = friends.map(f => f.id).sort((a, b) => {
+      const ta = _convData[a]?.lastTime || '';
+      const tb = _convData[b]?.lastTime || '';
+      return tb.localeCompare(ta);
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     RENDER CONVERSATION LIST
+  ══════════════════════════════════════════════════════════════ */
+  function renderConvList() {
+    const list = document.getElementById('qm-sc-conv-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!_convOrder.length) {
+      list.innerHTML = `
+        <div class="qm-sc-empty">
+          <span class="qm-sc-empty-icon">💬</span>
+          <strong>Koi friend nahi abhi</strong>
+          <p>Friends page se friends add karo<br>aur chat shuru karo!</p>
+        </div>`;
+      return;
+    }
+
+    _convOrder.forEach(fid => {
+      const d = _convData[fid];
+      if (!d) return;
+
+      const row = document.createElement('div');
+      row.className = 'qm-sc-row';
+      row.dataset.friendId = fid;
+
+      const preview = d.lastMsg
+        ? d.lastMsg.slice(0, 42) + (d.lastMsg.length > 42 ? '…' : '')
+        : 'Abhi koi message nahi';
+      const hasUnread = (d.unread || 0) > 0;
+
+      row.innerHTML = `
+        <div class="qm-sc-avatar">${_esc(d.initials)}</div>
+        <div class="qm-sc-info">
+          <div class="qm-sc-name">${_esc(d.name)}</div>
+          <div class="qm-sc-preview ${hasUnread ? 'unread' : ''}">${_esc(preview)}</div>
+        </div>
+        <div class="qm-sc-meta">
+          <span class="qm-sc-time">${d.lastTime ? _fmtTime(d.lastTime) : ''}</span>
+          <span class="qm-sc-unread ${hasUnread ? 'show' : ''}">${hasUnread ? (d.unread > 99 ? '99+' : d.unread) : ''}</span>
+        </div>
+      `;
+      row.addEventListener('click', () => showChat(fid, d.name));
+      list.appendChild(row);
+    });
+
+    updateNavBadge();
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     REALTIME
+  ══════════════════════════════════════════════════════════════ */
+  function _subscribeGlobal(user) {
+    if (_globalCh) { window.sb?.removeChannel(_globalCh); _globalCh = null; }
+    if (!window.sb) return;
+
+    _globalCh = window.sb
+      .channel('qm-sc-global-' + user.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const msg = payload.new;
+        if (!msg || msg.sender_id === user.id) return;
+
+        const fid = _convToFriend[msg.conversation_id];
+        if (!fid) { loadConvList(); return; } // new conversation
+        if (!_convData[fid]) return;
+
+        _convData[fid].lastMsg  = msg.content;
+        _convData[fid].lastTime = msg.created_at;
+
+        // Don't badge if this chat is active and drawer is open
+        const drawerOpen = document.getElementById('qm-sc-drawer').classList.contains('open');
+        if (drawerOpen && _activeFriend === fid) {
+          window.sb.from('messages').update({ seen: true }).eq('id', msg.id);
+        } else {
+          _convData[fid].unread = (_convData[fid].unread || 0) + 1;
+        }
+
+        // Bubble to top
+        _convOrder = [fid, ..._convOrder.filter(id => id !== fid)];
+
+        // Re-render list if visible
+        const listVisible = document.getElementById('qm-sc-conv-list').style.display !== 'none'
+          && document.getElementById('qm-sc-conv-list').innerHTML !== '';
+        if (drawerOpen && !_activeFriend) renderConvList();
+        else updateNavBadge();
+      })
+      .subscribe();
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NAV BADGE
+  ══════════════════════════════════════════════════════════════ */
+  function updateNavBadge() {
+    const total = Object.values(_convData).reduce((s, d) => s + (d.unread || 0), 0);
+    const badge = document.getElementById('qm-sc-nav-badge');
+    if (!badge) return;
+    if (total > 0) {
+      badge.textContent = total > 99 ? '99+' : total;
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     HELPERS
+  ══════════════════════════════════════════════════════════════ */
+  function _fmtTime(iso) {
+    if (!iso) return '';
+    const d    = new Date(iso);
+    const now  = new Date();
+    const diff = Math.floor((now - d) / 86400000);
+    if (diff === 0) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    if (diff === 1) return 'Kal';
+    if (diff < 7)  return d.toLocaleDateString('en-IN', { weekday: 'short' });
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  }
+
+  function _esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     BOOT
+  ══════════════════════════════════════════════════════════════ */
+  function boot() {
+    injectHTML();
+
+    // Wait for currentUser then pre-load convs
+    const t = setInterval(() => {
+      if (!window.currentUser) return;
+      clearInterval(t);
+      loadConvList();
+    }, 400);
+
+    // Also decorate renderFriends so friendsCache stays fresh
+    const _origRF = window.renderFriends;
+    if (typeof _origRF === 'function') {
+      window.renderFriends = function (...args) {
+        _origRF(...args);
+        // Rebuild initials if new friends added
+        (window.friendsCache || []).forEach(f => {
+          if (!_convData[f.id]) {
+            const initials = (f.display_name || 'U')
+              .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            _convData[f.id] = { name: f.display_name, initials, lastMsg: '', lastTime: null, unread: 0 };
+          }
+        });
+      };
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(boot, 100));
+  } else {
+    setTimeout(boot, 100);
+  }
+
+})();
