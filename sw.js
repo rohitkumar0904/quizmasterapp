@@ -2,12 +2,13 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-const CACHE_STATIC = 'qm-static-v4';  // v3 → v4
+const CACHE_STATIC = 'qm-static-v4';
+const CACHE_DYNAMIC = 'qm-dynamic-v4';
 
 const SHELL_URLS = [
   '/',
   '/index.html',
-  '/index2.html',   // ← ADD
+  '/index2.html',
   '/app.js',
   '/oldstatic.js',
   '/pomodoro.js',
@@ -19,7 +20,6 @@ const SHELL_URLS = [
   '/icon-192.png',
   '/icon-512.png'
 ];
-// rest stays the same
 
 /* Install */
 self.addEventListener('install', event => {
@@ -46,7 +46,6 @@ self.addEventListener('activate', event => {
 /* Fetch */
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-
   const url = new URL(event.request.url);
 
   /* Supabase: always network */
@@ -68,7 +67,6 @@ self.addEventListener('fetch', event => {
             return response;
           })
           .catch(() => cached);
-
         return cached || networkFetch;
       })
     );
@@ -88,7 +86,6 @@ self.addEventListener('fetch', event => {
             cache.put(event.request, response.clone());
           });
         }
-
         return response;
       })
       .catch(() => caches.match(event.request))
