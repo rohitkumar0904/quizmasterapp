@@ -2018,6 +2018,7 @@ async function openChat(friendId, friendName) {
     document.getElementById('chat-panel-title').textContent = friendName;
     panel.classList.add('chat-panel--open');
   }
+  _injectEmojiPicker();
 
   await loadMessages(_chatConvId);
   _subscribeChatRealtime(_chatConvId);
@@ -2071,6 +2072,213 @@ async function sendMessage() {
     content: text,
   });
   if (error) { toast('Failed to send.', 'error'); input.value = text; }
+}
+
+// ── EMOJI PICKER ─────────────────────────────────────────────────
+const _EMOJI_CATS = [
+  { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'] },
+  { label: '👍', emojis: ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👀','👁️','👅','👄','💋','🦷','👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','🙍','🙎','🙅','🙆','💁','🙋','🧏','🙇','🤦','🤷'] },
+  { label: '❤️', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🔕'] },
+  { label: '🐶', emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🦟','🦗','🪳','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🦭','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿️','🦔'] },
+  { label: '🍎', emojis: ['🍏','🍎','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🧃','🥤','🧋','☕','🍵','🫖','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽️','🥢','🧂'] },
+  { label: '⚽', emojis: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🪅','🪆','🎮','🕹️'] },
+  { label: '🚗', emojis: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','🛟','⛵','🛶','🚤','🛳️','⛴️','🛥️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🪐','🌍','🌎','🌏','🌐','🗺️','🧭','🧱','🏗️','🪞','🪟','🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏬','🏭','🏯','🏰','💒','🗼','🗽','⛪','🕌','🛕','🕍','⛩️','🕋','⛲','⛺','🌁','🌃','🏙️','🌄','🌅','🌆','🌇','🌉','🌌','🎠','🛝','🎡','🎢','💈','🎪'] },
+];
+
+let _emojiPickerOpen = false;
+
+function _injectEmojiPicker() {
+  if (document.getElementById('qm-emoji-btn')) return;
+
+  // CSS inject (once)
+  if (!document.getElementById('qm-emoji-css')) {
+    const s = document.createElement('style');
+    s.id = 'qm-emoji-css';
+    s.textContent = `
+      #qm-emoji-btn {
+        background: none; border: none; cursor: pointer;
+        font-size: 1.3rem; line-height: 1; padding: 0 6px 0 4px;
+        color: var(--slate, #888); flex-shrink: 0;
+        transition: transform 0.15s;
+      }
+      #qm-emoji-btn:hover { transform: scale(1.2); }
+      #qm-emoji-picker {
+        position: absolute; bottom: calc(100% + 8px); left: 0;
+        width: 300px; background: var(--paper, #fff);
+        border: 1px solid var(--line, #ddd);
+        border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        z-index: 9999; overflow: hidden;
+        display: none; flex-direction: column;
+      }
+      #qm-emoji-picker.open { display: flex; }
+      #qm-emoji-search {
+        border: none; border-bottom: 1px solid var(--line, #ddd);
+        padding: 8px 12px; font-size: 0.85rem; outline: none;
+        background: var(--paper-raised, #f7f5f0);
+        color: var(--ink, #222); width: 100%; box-sizing: border-box;
+      }
+      #qm-emoji-cats {
+        display: flex; gap: 2px; padding: 6px 8px;
+        border-bottom: 1px solid var(--line, #ddd);
+        overflow-x: auto; scrollbar-width: none;
+      }
+      #qm-emoji-cats::-webkit-scrollbar { display: none; }
+      .qm-ec-btn {
+        background: none; border: none; cursor: pointer;
+        font-size: 1.1rem; padding: 4px 6px; border-radius: 6px;
+        transition: background 0.1s; flex-shrink: 0;
+      }
+      .qm-ec-btn:hover, .qm-ec-btn.active { background: var(--saffron-soft, rgba(255,200,50,0.2)); }
+      #qm-emoji-grid {
+        display: grid; grid-template-columns: repeat(8, 1fr);
+        gap: 2px; padding: 8px; max-height: 200px;
+        overflow-y: auto; scrollbar-width: thin;
+      }
+      .qm-eg-btn {
+        background: none; border: none; cursor: pointer;
+        font-size: 1.25rem; padding: 4px; border-radius: 6px;
+        transition: background 0.1s; line-height: 1; text-align: center;
+      }
+      .qm-eg-btn:hover { background: var(--saffron-soft, rgba(255,200,50,0.2)); }
+      #qm-emoji-recent {
+        padding: 6px 8px 4px; font-size: 0.68rem;
+        color: var(--slate, #888); font-family: var(--font-body, sans-serif);
+        display: none;
+      }
+      #qm-emoji-recent.show { display: block; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // Find chat footer / input area
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+  const footer = chatInput.closest('.chat-footer') || chatInput.parentElement;
+  if (!footer) return;
+  footer.style.position = 'relative';
+
+  // Emoji button
+  const btn = document.createElement('button');
+  btn.id = 'qm-emoji-btn';
+  btn.title = 'Emoji';
+  btn.textContent = '😊';
+  btn.type = 'button';
+  footer.insertBefore(btn, chatInput);
+
+  // Picker container
+  const picker = document.createElement('div');
+  picker.id = 'qm-emoji-picker';
+  picker.innerHTML = `
+    <input id="qm-emoji-search" type="text" placeholder="Search emoji…" autocomplete="off"/>
+    <div id="qm-emoji-recent"></div>
+    <div id="qm-emoji-cats"></div>
+    <div id="qm-emoji-grid"></div>
+  `;
+  footer.appendChild(picker);
+
+  // Build category tabs
+  const catsEl = picker.querySelector('#qm-emoji-cats');
+  _EMOJI_CATS.forEach((cat, i) => {
+    const b = document.createElement('button');
+    b.className = 'qm-ec-btn' + (i === 0 ? ' active' : '');
+    b.textContent = cat.label;
+    b.title = cat.label;
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      catsEl.querySelectorAll('.qm-ec-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      _renderEmojiGrid(cat.emojis);
+      picker.querySelector('#qm-emoji-search').value = '';
+    });
+    catsEl.appendChild(b);
+  });
+
+  _renderEmojiGrid(_EMOJI_CATS[0].emojis);
+  _updateRecentEmojis();
+
+  // Search
+  picker.querySelector('#qm-emoji-search').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) { _renderEmojiGrid(_EMOJI_CATS[0].emojis); return; }
+    const all = _EMOJI_CATS.flatMap(c => c.emojis);
+    _renderEmojiGrid(all.filter(em => em.includes(q)));
+  });
+
+  // Toggle
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _emojiPickerOpen = !_emojiPickerOpen;
+    picker.classList.toggle('open', _emojiPickerOpen);
+    if (_emojiPickerOpen) {
+      _updateRecentEmojis();
+      picker.querySelector('#qm-emoji-search').focus();
+    }
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (_emojiPickerOpen && !picker.contains(e.target) && e.target !== btn) {
+      _emojiPickerOpen = false;
+      picker.classList.remove('open');
+    }
+  });
+}
+
+function _renderEmojiGrid(emojis) {
+  const grid = document.getElementById('qm-emoji-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  emojis.forEach(em => {
+    const b = document.createElement('button');
+    b.className = 'qm-eg-btn';
+    b.textContent = em;
+    b.type = 'button';
+    b.addEventListener('click', () => _insertEmoji(em));
+    grid.appendChild(b);
+  });
+}
+
+function _insertEmoji(em) {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const start = input.selectionStart;
+  const end   = input.selectionEnd;
+  const val   = input.value;
+  input.value = val.slice(0, start) + em + val.slice(end);
+  input.selectionStart = input.selectionEnd = start + em.length;
+  input.focus();
+
+  // Save to recent (localStorage, max 24)
+  try {
+    let recent = JSON.parse(localStorage.getItem('qm_recent_emoji') || '[]');
+    recent = [em, ...recent.filter(x => x !== em)].slice(0, 24);
+    localStorage.setItem('qm_recent_emoji', JSON.stringify(recent));
+  } catch(e) {}
+  _updateRecentEmojis();
+}
+
+function _updateRecentEmojis() {
+  const recentEl = document.getElementById('qm-emoji-recent');
+  const grid     = document.getElementById('qm-emoji-grid');
+  if (!recentEl || !grid) return;
+  try {
+    const recent = JSON.parse(localStorage.getItem('qm_recent_emoji') || '[]');
+    if (!recent.length) { recentEl.classList.remove('show'); return; }
+    recentEl.classList.add('show');
+    recentEl.textContent = 'Recently used';
+    // Prepend recent row above grid
+    const recentRow = document.createElement('div');
+    recentRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:2px;padding:0 8px 4px;';
+    recent.forEach(em => {
+      const b = document.createElement('button');
+      b.className = 'qm-eg-btn';
+      b.textContent = em;
+      b.type = 'button';
+      b.addEventListener('click', () => _insertEmoji(em));
+      recentRow.appendChild(b);
+    });
+    grid.parentElement.insertBefore(recentRow, grid);
+  } catch(e) {}
 }
 
 function _subscribeChatRealtime(convId) {
