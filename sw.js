@@ -2,10 +2,7 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-
-const CACHE_STATIC = 'qm-static-v2';
-const CACHE_DYNAMIC = 'qm-dynamic-v2';
-
+const CACHE_STATIC = 'qm-static-v3'; // bump version
 const SHELL_URLS = [
   '/',
   '/index.html',
@@ -13,11 +10,14 @@ const SHELL_URLS = [
   '/oldstatic.js',
   '/pomodoro.js',
   '/pomodoro-race.js',
+  '/qm-cache.js',        // ← new
+  '/qm-sidebar-chat.js', // ← new
   '/style.css',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png'
 ];
+// rest stays the same
 
 /* Install */
 self.addEventListener('install', event => {
