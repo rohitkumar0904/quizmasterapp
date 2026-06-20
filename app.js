@@ -2194,15 +2194,30 @@ function closeChat() {
 /* Inject 🗑️ button in chat header (called on every openChat) */
 function _injectClearChatBtn() {
   if (document.getElementById('qm-clear-chat-btn')) return;
-  const header = document.querySelector('#chat-panel .chat-panel-header, #chat-panel .chat-header');
+
+  // Chat panel ke andar header dhundo — multiple selectors try karo
+  const panel  = document.getElementById('chat-panel');
+  const header = panel?.querySelector(
+    '.chat-panel-header, .chat-header, .chat-top, [class*="header"]'
+  ) || panel?.querySelector('div');
   if (!header) return;
+
   const btn = document.createElement('button');
   btn.id = 'qm-clear-chat-btn';
   btn.className = 'qm-clear-btn';
   btn.title = 'Clear my messages';
   btn.textContent = '🗑️';
   btn.addEventListener('click', _confirmClearChat);
-  header.appendChild(btn);
+
+  // × close button ke PEHLE insert karo
+  const closeBtn = header.querySelector(
+    'button[title="Close"], button[aria-label="Close"], .chat-close, .close-btn, button:last-child'
+  );
+  if (closeBtn) {
+    header.insertBefore(btn, closeBtn);
+  } else {
+    header.appendChild(btn);
+  }
 }
 
 /* Single message right-click / long-press context menu */
@@ -2237,8 +2252,19 @@ function _closeMsgContextMenu() {
 
 /* Delete a single message from DB + UI */
 async function _deleteSingleMessage(msgId, bubbleEl) {
-  const { error } = await sb.from('messages').delete().eq('id', msgId);
+  // Pehle current deleted_by array fetch karo
+  const { data: msgData } = await sb.from('messages')
+    .select('deleted_by')
+    .eq('id', msgId)
+    .single();
+  const existing = msgData?.deleted_by || [];
+  if (existing.includes(currentUser.id)) return; // already deleted
+
+  const { error } = await sb.from('messages')
+    .update({ deleted_by: [...existing, currentUser.id] })
+    .eq('id', msgId);
   if (error) { toast('Delete nahi hua, dobara try karo', 'error'); return; }
+
   bubbleEl.style.transition = 'opacity 0.2s, transform 0.2s';
   bubbleEl.style.opacity = '0';
   bubbleEl.style.transform = 'scale(0.9)';
@@ -2251,8 +2277,8 @@ function _confirmClearChat() {
   overlay.className = 'qm-del-confirm';
   overlay.innerHTML = `
     <div class="qm-del-confirm-box">
-      <p>Apne saare messages delete karo?</p>
-      <small>Sirf tumhare messages hatenge — friend ko dikhte rahenge</small>
+      <p>Poora chat delete karo?</p>
+      <small>Sirf tumhare liye hatega — friend ke paas poora chat rahega</small>
       <div class="qm-del-confirm-actions">
         <button class="qm-btn-cancel">Cancel</button>
         <button class="qm-btn-delete">Delete karo</button>
@@ -2268,18 +2294,32 @@ function _confirmClearChat() {
 
 async function _clearMyMessages() {
   if (!_chatConvId || !currentUser) return;
-  const { error } = await sb.from('messages').delete()
-    .eq('conversation_id', _chatConvId)
-    .eq('sender_id', currentUser.id);
-  if (error) { toast('Clear nahi hua, dobara try karo', 'error'); return; }
+  const uid = currentUser.id;
 
-  // Remove only my bubbles from UI
-  document.querySelectorAll('.chat-bubble--mine').forEach(el => {
+  // Saare messages fetch karo is conversation ke
+  const { data: allMsgs, error: fetchErr } = await sb.from('messages')
+    .select('id, deleted_by')
+    .eq('conversation_id', _chatConvId);
+  if (fetchErr) { toast('Clear nahi hua, dobara try karo', 'error'); return; }
+
+  // Har message mein apna uid add karo deleted_by array mein
+  const updates = (allMsgs || [])
+    .filter(m => !(m.deleted_by || []).includes(uid))
+    .map(m => sb.from('messages')
+      .update({ deleted_by: [...(m.deleted_by || []), uid] })
+      .eq('id', m.id)
+    );
+  const results = await Promise.all(updates);
+  const anyError = results.find(r => r.error);
+  if (anyError) { toast('Kuch messages clear nahi hue', 'error'); return; }
+
+  // UI se saare bubbles animate karke hatao
+  document.querySelectorAll('.chat-bubble--mine, .chat-bubble--theirs').forEach(el => {
     el.style.transition = 'opacity 0.15s';
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 160);
   });
-  toast('Tumhare messages delete ho gaye', 'success');
+  toast('Poora chat tumhare liye clear ho gaya', 'success');
 }
 
 async function loadUnreadCount() {
