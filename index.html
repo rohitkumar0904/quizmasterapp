@@ -53,6 +53,186 @@ input[type="radio"]:checked + .fce-option-letter {
 .fce-delete-btn:hover {
   background: var(--error-soft);
 }
+/* Tracker view wrapper — scoped inside index.html */
+#view-tracker {
+  padding: 0;
+}
+#view-tracker .trk-root {
+  font-family: 'Syne', 'Inter', sans-serif;
+  color: #dde4f5;
+}
+#view-tracker {
+  --trk-bg:#080b12; --trk-card:#0f1320; --trk-card2:#141828;
+  --trk-border:#1e2538; --trk-border2:#252d45;
+  --trk-accent:#f5c842; --trk-accent2:#3ecfcf; --trk-accent3:#f06090;
+  --trk-text:#dde4f5; --trk-muted:#5a6490;
+  --trk-english:#3ecfcf; --trk-gs:#f06090;
+  --trk-maths:#6adb91; --trk-reasoning:#f6ad55; --trk-analysis:#c084fc;
+  --trk-g0:#0d1117; --trk-g1:#0e4429; --trk-g2:#006d32; --trk-g3:#26a641; --trk-g4:#39d353;
+  --trk-radius:14px;
+  background: var(--trk-bg);
+  border-radius: 12px;
+  min-height: 80vh;
+  padding-bottom: 60px;
+}
+#view-tracker .trk-header {
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px;
+}
+#view-tracker .trk-header h2 { font-size:1.3rem;font-weight:800;color:#fff; }
+#view-tracker .trk-header p  { color:var(--trk-muted);font-size:0.75rem;margin-top:2px;font-family:'JetBrains Mono',monospace; }
+#view-tracker .trk-sync-btn  { background:var(--trk-card);border:1px solid var(--trk-border2);color:var(--trk-muted);
+  padding:6px 14px;border-radius:9px;cursor:pointer;font-size:0.8rem;font-weight:700;transition:all 0.2s; }
+#view-tracker .trk-sync-btn:hover { border-color:var(--trk-accent);color:var(--trk-accent); }
+
+/* Tabs */
+#view-tracker .trk-tabs { display:flex;gap:6px;padding:0 16px 16px;flex-wrap:wrap; }
+#view-tracker .trk-tab  { flex:1;padding:9px 6px;border-radius:10px;border:1px solid var(--trk-border);
+  background:var(--trk-card);color:var(--trk-muted);font-size:0.82rem;font-weight:700;cursor:pointer;transition:all 0.25s;text-align:center; }
+#view-tracker .trk-tab:hover   { border-color:var(--trk-border2);color:var(--trk-text); }
+#view-tracker .trk-tab.active  { background:#1a1800;border-color:var(--trk-accent);color:var(--trk-accent); }
+
+/* Panels */
+#view-tracker .trk-panel { display:none;padding:0 16px; }
+#view-tracker .trk-panel.active { display:block; }
+
+/* Score bar */
+#view-tracker .score-bar { background:var(--trk-card);border:1px solid var(--trk-border2);border-radius:18px;
+  padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  box-shadow:0 4px 30px rgba(0,0,0,0.4); }
+#view-tracker .score-big   { font-size:3rem;font-weight:800;color:var(--trk-accent);line-height:1;font-family:'JetBrains Mono',monospace; }
+#view-tracker .score-sep   { font-size:1.2rem;color:var(--trk-muted);font-family:'JetBrains Mono',monospace; }
+#view-tracker .score-total { font-size:1.2rem;color:var(--trk-muted);font-family:'JetBrains Mono',monospace; }
+#view-tracker .progress-wrap  { flex:1;min-width:130px; }
+#view-tracker .progress-track { background:var(--trk-border);border-radius:999px;height:6px;overflow:hidden;margin-bottom:5px; }
+#view-tracker .progress-fill  { height:100%;border-radius:999px;background:linear-gradient(90deg,var(--trk-accent2),var(--trk-accent));transition:width 0.5s; }
+#view-tracker .progress-pct   { font-size:0.78rem;color:var(--trk-accent);font-weight:700;font-family:'JetBrains Mono',monospace; }
+#view-tracker .streak-badge   { display:inline-flex;align-items:center;gap:6px;background:#1a1500;border:1px solid #4a3808;
+  color:var(--trk-accent);font-size:0.8rem;font-weight:700;padding:6px 14px;border-radius:999px;font-family:'JetBrains Mono',monospace; }
+
+/* Date nav */
+#view-tracker .date-nav    { display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:20px;flex-wrap:wrap; }
+#view-tracker .trk-nav-btn { background:var(--trk-card);border:1px solid var(--trk-border);color:var(--trk-text);
+  padding:7px 14px;border-radius:9px;cursor:pointer;font-family:'Syne',sans-serif;font-size:0.85rem;font-weight:600;transition:all 0.2s; }
+#view-tracker .trk-nav-btn:hover:not(:disabled) { border-color:var(--trk-accent);color:var(--trk-accent); }
+#view-tracker .trk-nav-btn:disabled { opacity:0.25;cursor:not-allowed; }
+#view-tracker .trk-today-btn { background:#1a1800;border-color:#5a4010;color:var(--trk-accent);font-weight:700; }
+#view-tracker .date-display   { font-size:0.88rem;font-weight:700;min-width:200px;text-align:center;color:var(--trk-text); }
+
+/* Tasks */
+#view-tracker .tasks-grid    { display:flex;flex-direction:column;gap:6px; }
+#view-tracker .section-label { font-size:0.68rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;
+  color:var(--trk-muted);padding:12px 4px 4px;display:flex;align-items:center;gap:8px; }
+#view-tracker .section-label::after { content:'';flex:1;height:1px;background:var(--trk-border); }
+#view-tracker .section-count { background:var(--trk-border);color:var(--trk-muted);font-family:'JetBrains Mono',monospace;
+  font-size:0.65rem;padding:1px 7px;border-radius:99px; }
+#view-tracker .task-row { background:var(--trk-card);border:1px solid var(--trk-border);border-radius:var(--trk-radius);
+  padding:14px 16px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:12px;position:relative; }
+#view-tracker .task-row:hover { border-color:var(--trk-border2); }
+#view-tracker .task-row.done  { background:#0a1a0a;border-color:#1a3a1a; }
+#view-tracker .task-check     { width:22px;height:22px;border-radius:7px;border:2px solid var(--trk-border2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s; }
+#view-tracker .task-row.done .task-check { background:var(--trk-accent);border-color:var(--trk-accent);color:#000; }
+#view-tracker .task-info { flex:1;min-width:0; }
+#view-tracker .task-name { font-size:0.88rem;font-weight:700;color:var(--trk-text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+#view-tracker .task-row.done .task-name { text-decoration:line-through;opacity:0.5; }
+#view-tracker .task-meta { font-size:0.7rem;color:var(--trk-muted);margin-top:2px;font-family:'JetBrains Mono',monospace; }
+#view-tracker .cat-dot  { width:7px;height:7px;border-radius:50%;flex-shrink:0; }
+#view-tracker .cat-english   { background:var(--trk-english); }
+#view-tracker .cat-gs        { background:var(--trk-gs); }
+#view-tracker .cat-maths     { background:var(--trk-maths); }
+#view-tracker .cat-reasoning { background:var(--trk-reasoning); }
+#view-tracker .cat-analysis  { background:var(--trk-analysis); }
+#view-tracker .task-timer-btn { background:transparent;border:1px solid var(--trk-border2);color:var(--trk-accent2);
+  padding:4px 10px;border-radius:7px;cursor:pointer;font-size:0.72rem;font-weight:700;flex-shrink:0; }
+#view-tracker .task-timer-btn:hover { background:#0a1a2a; }
+
+/* Analytics */
+#view-tracker .analytics-card { background:var(--trk-card);border:1px solid var(--trk-border2);border-radius:18px;
+  padding:20px;margin-bottom:16px; }
+#view-tracker .analytics-card h3 { font-size:0.78rem;letter-spacing:2px;color:var(--trk-accent2);
+  text-transform:uppercase;margin-bottom:14px; }
+#view-tracker .stat-row { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px; }
+#view-tracker .stat-card { flex:1;min-width:90px;background:var(--trk-card);border:1px solid var(--trk-border2);
+  border-radius:12px;padding:14px;text-align:center; }
+#view-tracker .stat-val  { font-size:1.6rem;font-weight:800;color:var(--trk-accent);font-family:'JetBrains Mono',monospace; }
+#view-tracker .stat-lbl  { font-size:0.65rem;color:var(--trk-muted);margin-top:3px;text-transform:uppercase;letter-spacing:1px; }
+#view-tracker .cal-wrap  { overflow-x:auto; }
+#view-tracker .cal-grid  { display:flex;gap:3px; }
+#view-tracker .cal-col   { display:flex;flex-direction:column;gap:3px; }
+#view-tracker .cal-cell  { width:12px;height:12px;border-radius:2px;background:var(--trk-g0);border:1px solid var(--trk-border); }
+#view-tracker .cal-legend { display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.68rem;color:var(--trk-muted); }
+#view-tracker .leg-cell   { width:12px;height:12px;border-radius:2px; }
+#view-tracker .bar-chart  { display:flex;align-items:flex-end;gap:3px;height:80px;padding-top:10px; }
+#view-tracker .bar-col    { flex:1;background:var(--trk-accent);border-radius:3px 3px 0 0;min-height:2px;
+  cursor:pointer;transition:opacity 0.2s;opacity:0.7; }
+#view-tracker .bar-col:hover { opacity:1; }
+#view-tracker .bar-range-btn { background:var(--trk-card2);border:1px solid var(--trk-border2);color:var(--trk-muted);
+  padding:4px 10px;border-radius:7px;cursor:pointer;font-size:0.72rem;font-weight:700; }
+#view-tracker .bar-range-btn.active { border-color:var(--trk-accent2);color:var(--trk-accent2); }
+
+/* Notes tab */
+#view-tracker .notes-history-card { background:var(--trk-card);border:1px solid var(--trk-border2);border-radius:18px;padding:20px; }
+#view-tracker .notes-history-card h3 { font-size:0.78rem;letter-spacing:2px;color:var(--trk-accent2);text-transform:uppercase;margin-bottom:12px; }
+#view-tracker .notes-filter-bar { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px; }
+#view-tracker .notes-filter-btn { background:var(--trk-card2);border:1px solid var(--trk-border);color:var(--trk-muted);
+  padding:5px 12px;border-radius:9px;cursor:pointer;font-size:0.76rem;font-weight:700;transition:all 0.2s; }
+#view-tracker .notes-filter-btn.active { border-color:var(--trk-accent2);color:var(--trk-accent2); }
+#view-tracker .note-item { background:var(--trk-card2);border:1px solid var(--trk-border);border-radius:12px;padding:14px;margin-bottom:10px; }
+#view-tracker .note-item-head { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
+#view-tracker .note-item-date { font-size:0.7rem;color:var(--trk-muted);font-family:'JetBrains Mono',monospace; }
+#view-tracker .note-item-cat  { font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:99px; }
+#view-tracker .note-item-text { font-size:0.84rem;color:var(--trk-text);line-height:1.6;white-space:pre-wrap; }
+#view-tracker .note-add-form  { background:var(--trk-card2);border:1px solid var(--trk-border);border-radius:12px;padding:14px;margin-bottom:14px; }
+#view-tracker .note-textarea  { width:100%;background:var(--trk-bg);border:1px solid var(--trk-border2);color:var(--trk-text);
+  border-radius:9px;padding:10px;font-family:'Syne',sans-serif;font-size:0.84rem;resize:vertical;outline:none;min-height:80px; }
+#view-tracker .note-row { display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap; }
+#view-tracker .note-cat-sel { background:var(--trk-card);border:1px solid var(--trk-border2);color:var(--trk-text);
+  padding:6px 10px;border-radius:8px;font-family:'Syne',sans-serif;font-size:0.8rem;outline:none; }
+#view-tracker .note-save-btn { background:var(--trk-accent2);border:none;color:#000;padding:6px 16px;
+  border-radius:8px;cursor:pointer;font-family:'Syne',sans-serif;font-weight:800;font-size:0.82rem; }
+#view-tracker .note-del-btn  { background:transparent;border:1px solid #3a1a1a;color:#804040;padding:4px 10px;
+  border-radius:7px;cursor:pointer;font-size:0.72rem;margin-left:auto; }
+
+/* Manage */
+#view-tracker .manage-section { background:var(--trk-card);border:1px solid var(--trk-border2);border-radius:18px;
+  padding:18px;margin-bottom:14px; }
+#view-tracker .manage-section h3 { font-size:0.78rem;letter-spacing:2px;color:var(--trk-accent2);
+  text-transform:uppercase;margin-bottom:12px; }
+#view-tracker .manage-task-row { display:flex;align-items:center;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--trk-border);font-size:0.84rem;color:var(--trk-text); }
+#view-tracker .manage-task-row:last-child { border-bottom:none; }
+#view-tracker .manage-del-btn { background:transparent;border:1px solid #3a1a1a;color:#804040;
+  padding:3px 9px;border-radius:7px;cursor:pointer;font-size:0.72rem;margin-left:auto;flex-shrink:0; }
+#view-tracker .manage-edit-btn { background:transparent;border:1px solid var(--trk-border2);color:var(--trk-accent2);
+  padding:3px 9px;border-radius:7px;cursor:pointer;font-size:0.72rem;flex-shrink:0;margin-left:auto; }
+#view-tracker .manage-edit-btn:hover { background:#0a1a2a; }
+#view-tracker .add-form  { display:flex;flex-direction:column;gap:10px; }
+#view-tracker .trk-input { background:var(--trk-bg);border:1px solid var(--trk-border2);color:var(--trk-text);
+  padding:9px 12px;border-radius:10px;font-family:'Syne',sans-serif;font-size:0.84rem;width:100%;outline:none; }
+#view-tracker .trk-input:focus { border-color:var(--trk-accent2); }
+#view-tracker .add-row { display:flex;gap:8px;flex-wrap:wrap; }
+#view-tracker .trk-select { background:var(--trk-card);border:1px solid var(--trk-border2);color:var(--trk-text);
+  padding:9px 12px;border-radius:10px;font-family:'Syne',sans-serif;font-size:0.82rem;outline:none;flex:1; }
+#view-tracker .day-chk { display:flex;align-items:center;gap:4px;font-size:0.76rem;color:var(--trk-text);
+  cursor:pointer;padding:4px 8px;border-radius:7px;border:1px solid var(--trk-border);
+  background:var(--trk-card2);transition:all 0.2s; }
+#view-tracker .day-chk:hover { border-color:var(--trk-border2); }
+#view-tracker .add-submit { background:var(--trk-accent);border:none;color:#000;padding:9px 18px;
+  border-radius:10px;cursor:pointer;font-family:'Syne',sans-serif;font-weight:800;font-size:0.84rem;
+  transition:all 0.2s;flex:1; }
+#view-tracker .add-submit:hover { background:#ffe066; }
+#view-tracker .danger-zone { background:#0f0808;border:1px solid #3a1a1a;border-radius:12px;padding:14px;text-align:center; }
+#view-tracker .danger-zone p { color:#804040;font-size:0.76rem;margin-bottom:10px;font-weight:700; }
+#view-tracker .reset-btn { background:#2a0d0d;border:1px solid #5a1a1a;color:#f06060;
+  padding:8px 20px;border-radius:9px;cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;font-size:0.82rem; }
+
+/* Sync status */
+#view-tracker .trk-sync-status { text-align:center;font-size:0.72rem;color:var(--trk-muted);
+  font-family:'JetBrains Mono',monospace;padding:6px;margin-bottom:8px; }
+#view-tracker .trk-sync-status.ok  { color:var(--trk-maths); }
+#view-tracker .trk-sync-status.err { color:var(--trk-accent3); }
 </style>
 <script>
   // Apply saved theme immediately, before first paint, to avoid a light/dark flash on refresh.
@@ -176,9 +356,6 @@ input[type="radio"]:checked + .fce-option-letter {
         <span class="nav-icon">🔖</span> Bookmarks
       </a>
     
-    <a href="index2.html" class="nav-link">
-        <span class="nav-icon">📋</span> SSC Track Task
-    </a>
 
     <a href="https://rohitarya2881.github.io/englishreading/" 
        class="nav-link" 
@@ -191,6 +368,9 @@ input[type="radio"]:checked + .fce-option-letter {
 </a>
       <!-- ── Study Tools ── -->
       <div class="nav-section-label">Study Tools</div>
+      <a href="#tracker" class="nav-link" data-view="tracker">
+        <span class="nav-icon">📋</span><span>Tracker</span>
+      </a>
       <a href="#pomodoro" class="nav-link" data-view="pomodoro">
         <span class="nav-icon">🍅</span> Pomodoro
       </a>
@@ -219,6 +399,10 @@ input[type="radio"]:checked + .fce-option-letter {
       <div class="sidebar-util-row">
         <button class="btn btn--ghost btn--small theme-toggle" id="btn-theme" title="Toggle dark/light mode">🌙 Dark</button>
         <button class="btn btn--ghost btn--small" id="btn-logout">Log Out</button>
+      </div>
+      <div class="sidebar-util-row" style="margin-top:6px;gap:6px;">
+        <button class="btn btn--ghost btn--small" id="btn-install-app" style="display:none;flex:1" title="Install as Web App">📲 Install App</button>
+        <button class="btn btn--ghost btn--small" id="btn-update-app" style="display:none;flex:1;color:#f5c842;border-color:#5a4010" title="Update available">🔄 Update</button>
       </div>
     </div>
   </aside>
@@ -963,6 +1147,95 @@ Rules:
         🔒 Your profile is private — only you can see this activity. Friends will not see your stats or appear on the leaderboard.
       </p>
     </section>
+
+    <!-- ===== USER PROFILE VIEW (Friend/Search click) ===== -->
+    <section id="view-user-profile" class="view">
+      <header class="view-header">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn--ghost btn--small" id="btn-back-user-profile" onclick="showView(window._upPrevView||'friends')">← Back</button>
+          <div>
+            <span class="eyebrow" id="up-eyebrow">Public Profile</span>
+            <h2 id="up-display-name">—</h2>
+          </div>
+        </div>
+      </header>
+
+      <!-- Avatar + basic info -->
+      <div class="profile-card">
+        <div class="profile-top">
+          <div class="profile-avatar" id="up-avatar" style="font-size:1.8rem;width:64px;height:64px;line-height:64px;text-align:center;border-radius:50%;background:var(--accent,#1B2A4A);color:#fff;flex-shrink:0"></div>
+          <div class="profile-info">
+            <h3 id="up-name" style="margin:0"></h3>
+            <span class="rollno-value" id="up-rollno"></span>
+            <p class="profile-joined" id="up-joined"></p>
+            <button class="btn btn--primary btn--small" id="up-add-friend-btn" style="margin-top:0.5rem;display:none">Add Friend</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Private notice -->
+      <p class="hint" id="up-private-msg" style="display:none;margin:1rem 0">
+        🔒 This profile is private.
+      </p>
+
+      <div id="up-body">
+        <!-- Stats -->
+        <div class="profile-stats-grid" style="margin-top:1rem">
+          <div class="profile-stat-card">
+            <span class="profile-stat-icon">📚</span>
+            <span class="profile-stat-value" id="up-stat-quizzes">0</span>
+            <span class="profile-stat-label">Quizzes Attempted</span>
+          </div>
+          <div class="profile-stat-card">
+            <span class="profile-stat-icon">🎯</span>
+            <span class="profile-stat-value" id="up-stat-accuracy">0%</span>
+            <span class="profile-stat-label">Avg. Accuracy</span>
+          </div>
+          <div class="profile-stat-card">
+            <span class="profile-stat-icon">🔥</span>
+            <span class="profile-stat-value" id="up-stat-streak">0</span>
+            <span class="profile-stat-label">Day Streak</span>
+          </div>
+          <div class="profile-stat-card">
+            <span class="profile-stat-icon">🏆</span>
+            <span class="profile-stat-value" id="up-stat-best">0</span>
+            <span class="profile-stat-label">Best Streak</span>
+          </div>
+        </div>
+
+        <!-- Activity Calendar -->
+        <div class="profile-section">
+          <h3 class="section-label">Activity Calendar</h3>
+          <div class="contribution-calendar-wrap">
+            <div class="contribution-months" id="up-contribution-months"></div>
+            <div class="contribution-body">
+              <div class="contribution-day-labels">
+                <span>Mon</span><span>Wed</span><span>Fri</span>
+              </div>
+              <div class="contribution-grid" id="up-contribution-grid"></div>
+            </div>
+          </div>
+          <div class="contribution-legend">
+            <span class="contribution-legend-label">Less</span>
+            <span class="contribution-cell" data-level="0"></span>
+            <span class="contribution-cell" data-level="1"></span>
+            <span class="contribution-cell" data-level="2"></span>
+            <span class="contribution-cell" data-level="3"></span>
+            <span class="contribution-cell" data-level="4"></span>
+            <span class="contribution-legend-label">More</span>
+          </div>
+        </div>
+
+        <!-- Public Library -->
+        <div class="profile-section">
+          <h3 class="section-label">📤 Public Library</h3>
+          <div class="public-library-grid" id="up-public-library-grid"></div>
+          <p class="public-library-empty" id="up-public-library-empty" style="display:none">
+            Nothing shared publicly yet.
+          </p>
+        </div>
+      </div>
+    </section>
     <section id="view-inbox" class="view">
       <header class="view-header">
         <div>
@@ -1069,6 +1342,164 @@ Rules:
       </div>
     </section>
 
+<!-- ===== TRACKER STYLES ===== -->
+
+<!-- ===== TRACKER VIEW ===== -->
+<section id="view-tracker" class="view">
+  <div class="trk-root">
+    <div class="trk-header">
+      <div>
+        <h2>📚 SSC Daily Tracker</h2>
+        <p>Stay consistent — one day at a time</p>
+      </div>
+      <button class="trk-sync-btn" id="trk-sync-btn" onclick="trkSyncNow()">☁️ Sync</button>
+    </div>
+    <div class="trk-sync-status" id="trk-sync-status"></div>
+
+    <div class="trk-tabs" id="trkTabBar">
+      <button class="trk-tab active" data-trktab="today">📋 Today</button>
+      <button class="trk-tab" data-trktab="analytics">📊 Stats</button>
+      <button class="trk-tab" data-trktab="notes">📝 Notes</button>
+      <button class="trk-tab" data-trktab="manage">⚙️ Manage</button>
+    </div>
+
+    <!-- TODAY -->
+    <div class="trk-panel active" id="trk-tab-today">
+      <div class="score-bar">
+        <div>
+          <div style="display:flex;align-items:baseline;gap:6px;">
+            <div class="score-big" id="trkTodayScore">0</div>
+            <div class="score-sep">/</div>
+            <div class="score-total" id="trkScoreTotal">0</div>
+          </div>
+          <div style="color:var(--trk-muted);font-size:0.75rem;font-family:'JetBrains Mono',monospace;margin-top:2px">tasks done</div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="trkProgressFill" style="width:0%"></div></div>
+          <div class="progress-pct" id="trkProgressPct">0% complete</div>
+        </div>
+        <div class="streak-badge" id="trkStreakBadge">🔥 0 day streak</div>
+      </div>
+
+      <div class="date-nav">
+        <button class="trk-nav-btn" id="trkPrevBtn">◀ Prev</button>
+        <div class="date-display" id="trkDateDisplay">—</div>
+        <button class="trk-nav-btn" id="trkNextBtn">Next ▶</button>
+        <button class="trk-nav-btn trk-today-btn" id="trkTodayBtn">📅 Today</button>
+      </div>
+
+      <div class="tasks-grid" id="trkTasksGrid"></div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div class="trk-panel" id="trk-tab-analytics">
+      <div class="stat-row" id="trkStatRow"></div>
+      <div class="analytics-card">
+        <h3>// Activity Calendar — ALL TIME</h3>
+        <div class="cal-wrap">
+          <div class="cal-grid" id="trkCalGrid"></div>
+        </div>
+        <div class="cal-legend">
+          <span>Less</span>
+          <div class="leg-cell" style="background:var(--trk-g0);border:1px solid var(--trk-border)"></div>
+          <div class="leg-cell" style="background:var(--trk-g1)"></div>
+          <div class="leg-cell" style="background:var(--trk-g2)"></div>
+          <div class="leg-cell" style="background:var(--trk-g3)"></div>
+          <div class="leg-cell" style="background:var(--trk-g4)"></div>
+          <span>More</span>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span>// Daily Score</span>
+          <div style="display:flex;gap:6px;">
+            <button onclick="trkSetBarRange(30)" id="trkBarBtn30" class="bar-range-btn active">30D</button>
+            <button onclick="trkSetBarRange(90)" id="trkBarBtn90" class="bar-range-btn">90D</button>
+            <button onclick="trkSetBarRange(0)"  id="trkBarBtnAll" class="bar-range-btn">All</button>
+          </div>
+        </h3>
+        <div class="bar-chart" id="trkBarChart"></div>
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="trk-panel" id="trk-tab-notes">
+      <div class="note-add-form">
+        <textarea class="note-textarea" id="trkNoteText" placeholder="Study note likho — formula, shortcut, important point…"></textarea>
+        <div class="note-row">
+          <select class="note-cat-sel" id="trkNoteCat">
+            <option value="english">🔤 English</option>
+            <option value="gs">🌍 GS</option>
+            <option value="maths">🔢 Maths</option>
+            <option value="reasoning">🧠 Reasoning</option>
+            <option value="analysis">📊 Analysis</option>
+          </select>
+          <button class="note-save-btn" onclick="trkSaveNote()">Save Note</button>
+        </div>
+      </div>
+      <div class="notes-history-card">
+        <h3>// My Study Notes</h3>
+        <div class="notes-filter-bar" id="trkNotesFilterBar">
+          <button class="notes-filter-btn active" data-trkfilter="all">All</button>
+          <button class="notes-filter-btn" data-trkfilter="english">🔤 English</button>
+          <button class="notes-filter-btn" data-trkfilter="gs">🌍 GS</button>
+          <button class="notes-filter-btn" data-trkfilter="maths">🔢 Maths</button>
+          <button class="notes-filter-btn" data-trkfilter="reasoning">🧠 Reasoning</button>
+          <button class="notes-filter-btn" data-trkfilter="analysis">📊 Analysis</button>
+        </div>
+        <div id="trkNotesList"></div>
+      </div>
+    </div>
+
+    <!-- MANAGE -->
+    <div class="trk-panel" id="trk-tab-manage">
+      <div class="manage-section">
+        <h3>// All Tasks</h3>
+        <div id="trkManageList"></div>
+      </div>
+      <div class="manage-section">
+        <h3>// Add New Task</h3>
+        <div class="add-form">
+          <input type="text" class="trk-input" id="trkNewName" placeholder="Task name (e.g. Vocab 7 words)">
+          <div class="add-row">
+            <div style="display:flex;align-items:center;gap:6px;flex:1">
+              <input type="number" min="1" class="trk-input" id="trkNewDur" placeholder="30" style="width:80px;flex:none">
+              <span style="color:var(--trk-muted);font-size:0.78rem;white-space:nowrap;">min</span>
+            </div>
+            <select class="trk-select" id="trkNewCat">
+              <option value="english">🔤 English</option>
+              <option value="gs">🌍 GS</option>
+              <option value="maths">🔢 Maths</option>
+              <option value="reasoning">🧠 Reasoning</option>
+              <option value="analysis">📊 Analysis</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;" id="trkDayChks">
+            <label class="day-chk"><input type="checkbox" value="mon"> Mon</label>
+            <label class="day-chk"><input type="checkbox" value="tue"> Tue</label>
+            <label class="day-chk"><input type="checkbox" value="wed"> Wed</label>
+            <label class="day-chk"><input type="checkbox" value="thu"> Thu</label>
+            <label class="day-chk"><input type="checkbox" value="fri"> Fri</label>
+            <label class="day-chk"><input type="checkbox" value="sat"> Sat</label>
+            <label class="day-chk"><input type="checkbox" value="sun"> Sun</label>
+            <label class="day-chk"><input type="checkbox" value="daily" id="trkChkDaily"> Daily</label>
+          </div>
+          <select class="trk-select" id="trkNewSec">
+            <option value="subah">🌅 Morning</option>
+            <option value="dopahar">☀️ Afternoon</option>
+            <option value="shaam">🌆 Evening</option>
+            <option value="raat">🌙 Night</option>
+          </select>
+          <button class="add-submit" onclick="trkAddTask()">+ Add Task</button>
+        </div>
+      </div>
+      <div class="danger-zone">
+        <p>⚠ Danger Zone</p>
+        <button class="reset-btn" onclick="trkResetAll()">🗑 Delete all data & reset</button>
+      </div>
+    </div>
+  </div>
+</section>
   </main>
 </div>
 
@@ -1479,40 +1910,86 @@ Rules:
   </div>
 </div>
 
+
 <!-- Supabase client (must load first) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Static UI logic -->
 <script src="oldstatic.js"></script>
 <!-- Supabase integration -->
-<script src="app.js?v=5.0"></script>
+<script src="app.js?v=4.5"></script>
   <script src="qm-cache.js"></script>
-<script src="qm-sidebar-chat.js"></script>  
-  <script>
+<script src="qm-sidebar-chat.js"></script>
+<script>
+/* ── PWA Install ─────────────────────────────────────── */
+let _deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = 'flex';
+});
+
+document.getElementById('btn-install-app')?.addEventListener('click', async () => {
+  if (!_deferredInstallPrompt) return;
+  _deferredInstallPrompt.prompt();
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') {
+    const btn = document.getElementById('btn-install-app');
+    if (btn) btn.style.display = 'none';
+  }
+  _deferredInstallPrompt = null;
+});
+
+window.addEventListener('appinstalled', () => {
+  const btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = 'none';
+  _deferredInstallPrompt = null;
+});
+
+/* ── Service Worker + Update ─────────────────────────── */
+let _swReg = null;
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js');
+      _swReg = await navigator.serviceWorker.register('/sw.js');
 
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
+      /* Check update on every load */
+      _swReg.update().catch(() => {});
 
+      _swReg.addEventListener('updatefound', () => {
+        const newWorker = _swReg.installing;
         newWorker?.addEventListener('statechange', () => {
-          if (
-            newWorker.state === 'installed' &&
-            navigator.serviceWorker.controller
-          ) {
-            console.log('New version available.');
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            /* New version waiting — show Update button */
+            const btn = document.getElementById('btn-update-app');
+            if (btn) btn.style.display = 'flex';
           }
         });
       });
 
-      console.log('Service Worker registered');
+      /* If a new SW is already waiting on page load */
+      if (_swReg.waiting) {
+        const btn = document.getElementById('btn-update-app');
+        if (btn) btn.style.display = 'flex';
+      }
+
+      console.log('SW registered');
     } catch (err) {
       console.error('SW registration failed:', err);
     }
   });
 }
+
+document.getElementById('btn-update-app')?.addEventListener('click', () => {
+  if (_swReg && _swReg.waiting) {
+    _swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+  }
+  window.location.reload();
+});
 </script>
+<script src="tracker.js"></script>
   <!-- Pomodoro learning flow -->
 <script src="pomodoro.js"></script>
 <!-- Pomodoro race multiplayer -->
