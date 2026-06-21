@@ -8,13 +8,13 @@ const CACHE_DYNAMIC = 'qm-dynamic-v4';
 const SHELL_URLS = [
   '/',
   '/index.html',
-  '/index2.html',
   '/app.js',
   '/oldstatic.js',
   '/pomodoro.js',
   '/pomodoro-race.js',
   '/qm-cache.js',
   '/qm-sidebar-chat.js',
+  '/tracker.js',
   '/style.css',
   '/manifest.json',
   '/icon-192.png',
@@ -28,6 +28,11 @@ self.addEventListener('install', event => {
       .then(cache => cache.addAll(SHELL_URLS))
       .then(() => self.skipWaiting())
   );
+});
+
+/* Message — force update from UI */
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 /* Activate */
