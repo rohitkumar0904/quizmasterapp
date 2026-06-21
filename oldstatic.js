@@ -28,7 +28,7 @@ backdrop.addEventListener('click', closeSidebar);
 // ── ROUTER ─────────────────────────────────────────────────
 const ALL_VIEWS = ['dashboard','folder','create','quiz-setup','quiz-player',
   'result','flashcards','history','friends','backup','inbox','bookmarks','profile','notes',
-  'pomodoro','pomodoro-race'];
+  'pomodoro','pomodoro-race','tracker','user-profile'];
 
 function showView(name) {
   ALL_VIEWS.forEach(id => {
