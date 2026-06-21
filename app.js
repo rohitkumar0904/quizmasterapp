@@ -1102,69 +1102,103 @@ document.getElementById('btn-close-friend-profile')?.addEventListener('click', (
 // `friend` needs at least { id }. Other fields (display_name, roll_no,
 // is_public, created_at) are fetched fresh so this works for friend cards,
 // search results, and "preview my own profile" alike.
-async function openFriendProfile(friend) {
+async function openFriendProfile(friend, fromView) {
   if (!friend?.id) return;
 
   const isSelf = friend.id === currentUser?.id;
 
+  // Remember where we came from for Back button
+  window._upPrevView = fromView || 'friends';
+
+  // Fetch fresh profile
   let profile = friend;
-  // Always fetch a fresh copy so we have created_at + is_public,
-  // even if the caller only passed { id, display_name, ... }.
   const { data: freshProfile } = await sb.from('profiles')
     .select('id, display_name, roll_no, is_public, created_at')
     .eq('id', friend.id)
     .maybeSingle();
   if (freshProfile) profile = freshProfile;
 
-  // Deleted user ka profile open mat karo
-  if (freshProfile?.is_deleted) {
-    toast('This user no longer exists.', 'info');
-    return;
-  }
+  // Deleted user
+  if (freshProfile?.is_deleted) { toast('This user no longer exists.', 'info'); return; }
 
+  // Populate header
   const initials = (profile.display_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  document.getElementById('friend-profile-avatar').textContent = initials;
-  document.getElementById('friend-profile-name').textContent = profile.display_name || (isSelf ? 'You' : 'User');
-  document.getElementById('friend-profile-rollno').textContent = profile.roll_no || '';
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-  const joinedEl = document.getElementById('friend-profile-joined');
-  if (joinedEl) {
-    joinedEl.textContent = profile.created_at
-      ? 'Member since ' + new Date(profile.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-      : '';
+  setEl('up-avatar', initials);
+  setEl('up-display-name', profile.display_name || 'User');
+  setEl('up-name', profile.display_name || 'User');
+  setEl('up-rollno', profile.roll_no || '');
+  setEl('up-eyebrow', isSelf ? 'Your Profile' : 'Public Profile');
+  const joinedEl = document.getElementById('up-joined');
+  if (joinedEl) joinedEl.textContent = profile.created_at
+    ? 'Member since ' + new Date(profile.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+    : '';
+
+  // Add Friend button — same status logic as global search results.
+  // The button is a single persistent element reused across profile
+  // views, so clone-replace it first to clear any listener wired for
+  // a previously-viewed friend before wiring the current one.
+  let addFriendBtn = document.getElementById('up-add-friend-btn');
+  if (addFriendBtn) {
+    if (isSelf) {
+      addFriendBtn.style.display = 'none';
+    } else {
+      addFriendBtn = addFriendBtn.cloneNode(true);
+      document.getElementById('up-add-friend-btn').replaceWith(addFriendBtn);
+      addFriendBtn.id = 'up-add-friend-btn';
+      addFriendBtn.style.display = '';
+      addFriendBtn.disabled = false;
+      addFriendBtn.classList.remove('btn--disabled');
+      addFriendBtn.textContent = friendButtonLabel(profile.id);
+      wireAddFriendButton(addFriendBtn, profile.id);
+    }
   }
 
-  const body = document.getElementById('friend-profile-body');
-  const privateMsg = document.getElementById('friend-profile-private-msg');
+  const body       = document.getElementById('up-body');
+  const privateMsg = document.getElementById('up-private-msg');
+  const isPrivate  = profile.is_public === false && !isSelf;
 
-  // RLS already prevents reading another user's private profile data
-  // (folders/quizzes/likes all require is_public=true or own user_id), but
-  // we also show a friendly message instead of an empty/broken-looking modal.
-  // For self-preview, showing this too helps the user understand what
-  // others see when their profile is set to private.
-  const isPrivateToViewer = profile.is_public === false;
-
-  if (isPrivateToViewer) {
+  if (isPrivate) {
     if (body) body.style.display = 'none';
-    if (privateMsg) {
-      privateMsg.textContent = isSelf
-        ? '🔒 Your profile is private. This is what others see — toggle visibility in My Profile to share your library.'
-        : '🔒 This profile is private.';
-      privateMsg.style.display = 'block';
-    }
-    openModal('modal-friend-profile');
+    if (privateMsg) { privateMsg.textContent = '🔒 This profile is private.'; privateMsg.style.display = 'block'; }
+    showView('user-profile');
     return;
   }
 
   if (body) body.style.display = '';
   if (privateMsg) privateMsg.style.display = 'none';
 
-  openModal('modal-friend-profile');
+  showView('user-profile');
+
   await Promise.all([
-    renderFriendPublicLibrary(profile, isSelf),
-    renderFriendStats(profile),
-    buildActivityCalendarReal(profile.id, 'friend-contribution-grid', 'friend-contribution-months')
+    renderUserProfileStats(profile),
+    renderUserPublicLibrary(profile, isSelf),
+    buildActivityCalendarReal(profile.id, 'up-contribution-grid', 'up-contribution-months'),
   ]);
+}
+
+async function renderUserProfileStats(friend) {
+  const { data: attempts } = await sb.from('quiz_attempts')
+    .select('score, total, attempted_at').eq('user_id', friend.id);
+
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  if (!attempts || !attempts.length) {
+    setEl('up-stat-quizzes', '0'); setEl('up-stat-accuracy', '0%');
+    setEl('up-stat-streak', '0');  setEl('up-stat-best', '0');
+    return;
+  }
+  setEl('up-stat-quizzes', attempts.length);
+  const avgPct = attempts.reduce((s, a) => s + (a.total > 0 ? (a.score/a.total)*100 : 0), 0) / attempts.length;
+  setEl('up-stat-accuracy', Math.round(avgPct) + '%');
+  const countMap = {};
+  attempts.forEach(a => { const d = (a.attempted_at||'').slice(0,10); if(d) countMap[d]=(countMap[d]||0)+1; });
+  const { current, best } = calcStreak(countMap);
+  setEl('up-stat-streak', current + (current===1?' day':' days'));
+  setEl('up-stat-best',   best    + (best===1?' day':' days'));
+  const streakCard = document.getElementById('up-stat-streak')?.closest('.profile-stat-card');
+  if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
 }
 
 // ── STREAK CALCULATION ────────────────────────────────────────
@@ -1285,8 +1319,12 @@ async function loadMyProfileStats() {
 }
 
 async function renderFriendPublicLibrary(friend, isSelf) {
-  const grid  = document.getElementById('friend-public-library-grid');
-  const empty = document.getElementById('friend-public-library-empty');
+  return renderUserPublicLibrary(friend, isSelf);
+}
+
+async function renderUserPublicLibrary(friend, isSelf) {
+  const grid  = document.getElementById('up-public-library-grid');
+  const empty = document.getElementById('up-public-library-empty');
   if (!grid) return;
   grid.innerHTML = '<p style="color:var(--slate);padding:1rem">Loading…</p>';
 
@@ -2195,7 +2233,7 @@ function closeChat() {
 function _injectClearChatBtn() {
   if (document.getElementById('qm-clear-chat-btn')) return;
 
-  // Chat panel ke andar header dhundo — multiple selectors try karo
+  // Find the header inside the chat panel — try multiple selectors
   const panel  = document.getElementById('chat-panel');
   const header = panel?.querySelector(
     '.chat-panel-header, .chat-header, .chat-top, [class*="header"]'
@@ -2209,7 +2247,7 @@ function _injectClearChatBtn() {
   btn.textContent = '🗑️';
   btn.addEventListener('click', _confirmClearChat);
 
-  // × close button ke PEHLE insert karo
+  // Insert BEFORE the × close button
   const closeBtn = header.querySelector(
     'button[title="Close"], button[aria-label="Close"], .chat-close, .close-btn, button:last-child'
   );
@@ -2256,7 +2294,7 @@ async function _deleteSingleMessage(msgId, bubbleEl) {
     p_message_id: msgId,
     p_user_id: currentUser.id,
   });
-  if (error) { toast('Delete nahi hua, dobara try karo', 'error'); return; }
+  if (error) { toast('Delete failed, please try again.', 'error'); return; }
 
   bubbleEl.style.transition = 'opacity 0.2s, transform 0.2s';
   bubbleEl.style.opacity = '0';
@@ -2270,11 +2308,11 @@ function _confirmClearChat() {
   overlay.className = 'qm-del-confirm';
   overlay.innerHTML = `
     <div class="qm-del-confirm-box">
-      <p>Poora chat delete karo?</p>
-      <small>Sirf tumhare liye hatega — friend ke paas poora chat rahega</small>
+      <p>Delete entire chat?</p>
+      <small>This will only remove it for you — your friend will still see the full conversation</small>
       <div class="qm-del-confirm-actions">
         <button class="qm-btn-cancel">Cancel</button>
-        <button class="qm-btn-delete">Delete karo</button>
+        <button class="qm-btn-delete">Delete</button>
       </div>
     </div>`;
   overlay.querySelector('.qm-btn-cancel').addEventListener('click', () => overlay.remove());
@@ -2292,15 +2330,15 @@ async function _clearMyMessages() {
     p_conv_id: _chatConvId,
     p_user_id: currentUser.id,
   });
-  if (error) { toast('Clear nahi hua: ' + error.message, 'error'); return; }
+  if (error) { toast('Clear failed: ' + error.message, 'error'); return; }
 
-  // UI se saare bubbles animate karke hatao
+  // Animate out all message bubbles from the UI
   document.querySelectorAll('.chat-bubble--mine, .chat-bubble--theirs').forEach(el => {
     el.style.transition = 'opacity 0.15s';
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 160);
   });
-  toast('Poora chat tumhare liye clear ho gaya', 'success');
+  toast('Chat cleared for you.', 'success');
 }
 
 async function loadUnreadCount() {
@@ -2870,7 +2908,7 @@ function renderFriends(friends, pendingRequests) {
     `;
     card.addEventListener('click', e => {
       if (e.target.closest('.friend-actions')) return;
-      openFriendProfile(friend);
+      openFriendProfile(friend, 'friends');
     });
     card.querySelector('.btn-remove-friend').addEventListener('click', async () => {
       if (!confirm('Remove this friend?')) return;
@@ -4503,7 +4541,12 @@ async function renderGlobalSearchResults(query) {
         </div>
         <button class="btn btn--primary btn--small global-search-item-tag">${friendButtonLabel(u.id)}</button>
       `;
-      row.querySelector('.global-search-item-left').addEventListener('click', () => openFriendProfile(u));
+      row.addEventListener('click', e => {
+        if (e.target.closest('.global-search-item-tag')) return;
+        document.getElementById('global-search-input').value = '';
+        el.innerHTML = '';
+        openFriendProfile(u, 'dashboard');
+      });
       wireAddFriendButton(row.querySelector('button'), u.id);
       el.appendChild(row);
     });
@@ -4565,7 +4608,7 @@ async function renderGlobalSearchResults(query) {
       row.addEventListener('click', () => {
         document.getElementById('global-search-input').value = '';
         el.innerHTML = '';
-        openFriendProfile({ id: item.user_id, display_name: ownerName });
+        openFriendProfile({ id: item.user_id, display_name: ownerName }, 'bookmarks');
       });
       el.appendChild(row);
     });
@@ -4873,8 +4916,15 @@ document.getElementById('btn-begin-quiz')?.addEventListener('click', () => {
 
 // Global search (override static)
 const gsi = document.getElementById('global-search-input');
+const gsr = document.getElementById('global-search-results');
 gsi?.addEventListener('input', () => renderGlobalSearchResults(gsi.value));
-gsi?.addEventListener('focus', () => renderGlobalSearchResults(gsi.value));
+gsi?.addEventListener('focus', () => {
+  renderGlobalSearchResults(gsi.value);
+  if (gsr) gsr.style.display = 'block';
+});
+// Delay hiding on blur so a tap on a result row registers before the
+// dropdown disappears (mirrors friend-search-results fix above).
+gsi?.addEventListener('blur', () => setTimeout(() => { if (gsr) gsr.style.display = ''; }, 200));
 
 // Profile save button (add if not present)
 const profileView = document.getElementById('view-profile');
@@ -4882,7 +4932,7 @@ const profileView = document.getElementById('view-profile');
 // Preview my own public profile (read-only)
 document.getElementById('btn-preview-public-profile')?.addEventListener('click', () => {
   if (!currentUser) return;
-  openFriendProfile({ id: currentUser.id });
+  openFriendProfile({ id: currentUser.id }, 'profile');
 });
 if (profileView && !document.getElementById('btn-save-profile')) {
   const saveBtn = document.createElement('button');
@@ -4944,7 +4994,7 @@ document.getElementById('btn-bookmark-flash')?.addEventListener('click', () => {
 
   // Listen for auth changes (token refresh, signout on another tab)
   sb.auth.onAuthStateChange(async (event, session) => {
-    // PASSWORD_RECOVERY pehle check karo — SIGNED_IN se pehle
+    // Check PASSWORD_RECOVERY before SIGNED_IN
     if (event === 'PASSWORD_RECOVERY') {
       showPasswordResetUI();
       return;
@@ -5042,7 +5092,7 @@ async function resetMyData() {
 (async () => {
   const hash = window.location.hash;
   if (hash.includes('type=recovery')) {
-    // Token URL mein hai, session set hoga automatically
+    // Token is in the URL, session will be set automatically
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       showPasswordResetUI();
@@ -5051,16 +5101,16 @@ async function resetMyData() {
 })();
 
 function showPasswordResetUI() {
-  // Auth view dikhao
+  // Show the auth view
   const auth = document.getElementById('view-auth');
   auth.style.display = 'flex';
   auth.classList.add('active');
   document.getElementById('app-shell').style.display = 'none';
 
-  // Saare forms hide karo
+  // Hide all auth forms
   document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
 
-  // Reset password form inject karo agar nahi hai
+  // Inject the reset-password form if it doesn't exist yet
   if (!document.getElementById('form-reset-password')) {
     const form = document.createElement('form');
     form.id = 'form-reset-password';
