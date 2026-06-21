@@ -239,6 +239,13 @@
       chatPanel.style.cssText = 'position:static;width:100%;height:100%;flex:1;transform:none;box-shadow:none;border-left:none;';
       chatPanel.classList.add('chat-panel--open');
       chatWrap.appendChild(chatPanel);
+      // Drawer already shows Back / friend name / ✕ in its own header —
+      // hide the chat-panel's own duplicate title + close button so only
+      // one header row shows (keep the 🗑️ clear-chat button visible).
+      const cpTitle = chatPanel.querySelector('#chat-panel-title');
+      const cpClose = chatPanel.querySelector('.chat-panel-close');
+      if (cpTitle) cpTitle.style.display = 'none';
+      if (cpClose) cpClose.style.display = 'none';
     }
 
     if (typeof window.openChat === 'function') window.openChat(friendId, friendName);
@@ -251,6 +258,10 @@
     if (chatPanel && friendsSec && chatPanel.parentElement?.id === 'qm-sc-chat-wrap') {
       chatPanel.style.cssText = '';
       chatPanel.classList.remove('chat-panel--open');
+      const cpTitle = chatPanel.querySelector('#chat-panel-title');
+      const cpClose = chatPanel.querySelector('.chat-panel-close');
+      if (cpTitle) cpTitle.style.display = '';
+      if (cpClose) cpClose.style.display = '';
       friendsSec.appendChild(chatPanel);
     }
   }
