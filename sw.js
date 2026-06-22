@@ -19,7 +19,6 @@ const SHELL_URLS = [
   '/icon-192.png',
   '/icon-512.png'
 ];
-
 /* Install */
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -28,12 +27,10 @@ self.addEventListener('install', event => {
       .then(() => self.skipWaiting())
   );
 });
-
 /* Message — force update from UI */
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
-
 /* Activate */
 self.addEventListener('activate', event => {
   event.waitUntil(
@@ -46,17 +43,14 @@ self.addEventListener('activate', event => {
     ).then(() => self.clients.claim())
   );
 });
-
 /* Fetch */
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-
   /* Supabase: always network */
   if (url.hostname.includes('supabase.co')) {
     return;
   }
-
   /* index.html — network-first (hamesha fresh HTML milega) */
   if (url.pathname === '/' || url.pathname === '/index.html') {
     event.respondWith(
@@ -73,8 +67,7 @@ self.addEventListener('fetch', event => {
     );
     return;
   }
-
-  /* JS/CSS/assets — stale-while-revalidate (immutable headers hain inke) */
+  /* JS/CSS/assets — stale-while-revalidate */
   if (SHELL_URLS.includes(url.pathname)) {
     event.respondWith(
       caches.match(event.request).then(cached => {
@@ -93,7 +86,6 @@ self.addEventListener('fetch', event => {
     );
     return;
   }
-
   /* Everything else: network first */
   event.respondWith(
     fetch(event.request)
