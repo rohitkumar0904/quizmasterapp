@@ -2,8 +2,8 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-const CACHE_STATIC = 'qm-static-v7';
-const CACHE_DYNAMIC = 'qm-dynamic-v7';
+const CACHE_STATIC = 'qm-static-v8';
+const CACHE_DYNAMIC = 'qm-dynamic-v8';
 const SHELL_URLS = [
   '/',
   '/index.html',
