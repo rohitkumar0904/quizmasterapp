@@ -2,9 +2,8 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-const CACHE_STATIC = 'qm-static-v5';
-const CACHE_DYNAMIC = 'qm-dynamic-v5';
-
+const CACHE_STATIC = 'qm-static-v6';
+const CACHE_DYNAMIC = 'qm-dynamic-v6';
 const SHELL_URLS = [
   '/',
   '/index.html',
@@ -58,7 +57,24 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  /* App shell: stale-while-revalidate */
+  /* index.html — network-first (hamesha fresh HTML milega) */
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.status === 200) {
+            caches.open(CACHE_STATIC).then(cache => {
+              cache.put(event.request, response.clone());
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  /* JS/CSS/assets — stale-while-revalidate (immutable headers hain inke) */
   if (SHELL_URLS.includes(url.pathname)) {
     event.respondWith(
       caches.match(event.request).then(cached => {
