@@ -1969,11 +1969,19 @@ if ('serviceWorker' in navigator) {
         });
       });
 
-      /* If a new SW is already waiting on page load */
+      /* If a new SW is already waiting on page load — auto activate */
       if (_swReg.waiting) {
-        const btn = document.getElementById('btn-update-app');
-        if (btn) btn.style.display = 'flex';
+        _swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
       }
+
+      /* When new SW takes control — reload to get fresh files */
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
 
       console.log('SW registered');
     } catch (err) {
@@ -1985,8 +1993,9 @@ if ('serviceWorker' in navigator) {
 document.getElementById('btn-update-app')?.addEventListener('click', () => {
   if (_swReg && _swReg.waiting) {
     _swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+  } else {
+    window.location.reload();
   }
-  window.location.reload();
 });
 </script>
 <script src="tracker.js"></script>
