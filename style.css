@@ -3634,7 +3634,6 @@ select:focus {
 
 .note-card--today {
   border-left: 4px solid var(--saffron);
-  background: linear-gradient(135deg, var(--paper-raised) 0%, #fffdf8 100%);
 }
 
 .note-card-head {
