@@ -671,7 +671,7 @@ document.getElementById('btn-q-review').addEventListener('click', e => {
 
 document.getElementById('btn-q-search').addEventListener('click', () =>
   window.open('https://www.google.com/search?q='+encodeURIComponent(document.getElementById('question-text').textContent),'_blank'));
-document.getElementById('btn-q-bookmark').addEventListener('click', e => e.currentTarget.classList.toggle('bookmarked'));
+// btn-q-bookmark is handled by bookmarkCurrentQuestion() in app.js (real DB toggle + UI update)
 document.getElementById('btn-q-edit').addEventListener('click', () => {});
 document.getElementById('btn-q-delete').addEventListener('click', () => {});
 
