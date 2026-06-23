@@ -1143,12 +1143,27 @@ Rules:
         </p>
       </div>
 
+      <!-- Tracker Bar Chart (my profile) -->
+      <div class="profile-section" id="my-tracker-section" style="display:none">
+        <h3 class="section-label">📊 Tracker Activity</h3>
+        <div style="display:flex;gap:6px;margin-bottom:10px" id="my-tracker-range-btns">
+          <button class="bar-range-btn active" data-range="30">30D</button>
+          <button class="bar-range-btn" data-range="90">90D</button>
+          <button class="bar-range-btn" data-range="0">All</button>
+        </div>
+        <div class="tracker-chart-wrap" style="overflow-x:auto;overflow-y:hidden;width:100%">
+          <div id="my-tracker-bar-chart" style="display:flex;justify-content: space-between; align-items:flex-end;gap:10px;height:140px;padding-top:10px;min-width:max-content"></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap" id="my-tracker-stats"></div>
+      </div>
+
       <p class="hint" id="profile-private-note" style="display:none">
         🔒 Your profile is private — only you can see this activity. Friends will not see your stats or appear on the leaderboard.
       </p>
     </section>
 
     <!-- ===== USER PROFILE VIEW (Friend/Search click) ===== -->
+
     <section id="view-user-profile" class="view">
       <header class="view-header">
         <div style="display:flex;align-items:center;gap:12px">
@@ -1233,6 +1248,20 @@ Rules:
           <p class="public-library-empty" id="up-public-library-empty" style="display:none">
             Nothing shared publicly yet.
           </p>
+        </div>
+
+        <!-- Tracker Activity -->
+        <div class="profile-section" id="up-tracker-section" style="display:none">
+          <h3 class="section-label">📊 Study Tracker — Daily Score</h3>
+          <div style="display:flex;gap:6px;margin-bottom:10px" id="up-tracker-range-btns">
+            <button class="bar-range-btn active" data-range="30">30D</button>
+            <button class="bar-range-btn" data-range="90">90D</button>
+            <button class="bar-range-btn" data-range="0">All</button>
+          </div>
+          <div class="tracker-chart-wrap" style="overflow-x:auto;overflow-y:hidden;width:100%">
+            <div id="up-tracker-bar-chart" style="display:flex;justify-content:space-between;align-items:flex-end;gap:2px;height:140px;padding-top:10px;min-width:max-content"></div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap" id="up-tracker-stats"></div>
         </div>
       </div>
     </section>
