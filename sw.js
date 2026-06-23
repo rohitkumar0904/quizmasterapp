@@ -2,8 +2,8 @@
    QuizMaster Pro Service Worker
    Offline support + auto updates
 ============================================= */
-const CACHE_STATIC = 'qm-static-v8';
-const CACHE_DYNAMIC = 'qm-dynamic-v8';
+const CACHE_STATIC = 'qm-static-v9';
+const CACHE_DYNAMIC = 'qm-dynamic-v9';
 const SHELL_URLS = [
   '/',
   '/index.html',
@@ -57,8 +57,9 @@ self.addEventListener('fetch', event => {
       fetch(event.request)
         .then(response => {
           if (response && response.status === 200) {
+            const clone = response.clone();
             caches.open(CACHE_STATIC).then(cache => {
-              cache.put(event.request, response.clone());
+              cache.put(event.request, clone);
             });
           }
           return response;
@@ -74,8 +75,9 @@ self.addEventListener('fetch', event => {
         const networkFetch = fetch(event.request)
           .then(response => {
             if (response && response.status === 200) {
+              const clone = response.clone();
               caches.open(CACHE_STATIC).then(cache => {
-                cache.put(event.request, response.clone());
+                cache.put(event.request, clone);
               });
             }
             return response;
@@ -95,8 +97,9 @@ self.addEventListener('fetch', event => {
           response.status === 200 &&
           response.type !== 'opaque'
         ) {
+          const clone = response.clone();
           caches.open(CACHE_DYNAMIC).then(cache => {
-            cache.put(event.request, response.clone());
+            cache.put(event.request, clone);
           });
         }
         return response;
