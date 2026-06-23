@@ -1926,6 +1926,15 @@ function renderPlayerReal() {
   document.getElementById('btn-q-review').classList.toggle('active', quizState[currentQ]?.marked);
   document.getElementById('btn-prev-q').disabled = currentQ === 0;
   document.getElementById('btn-next-q').textContent = currentQ === total - 1 ? 'Finish ✓' : 'Next →';
+
+  // Sync bookmark button state for current question
+  const _bmBtn = document.getElementById('btn-q-bookmark');
+  if (_bmBtn && activeQuizId) {
+    const _isBm = bookmarksIndexCache.has(`${activeQuizId}:${currentQ}`);
+    _bmBtn.classList.toggle('bookmarked', _isBm);
+    _bmBtn.textContent = _isBm ? '🔖' : '🏷️';
+    _bmBtn.title = _isBm ? 'Remove bookmark' : 'Bookmark this question';
+  }
 }
 
 // ── RESULT SAVE ───────────────────────────────────────────────
@@ -1992,7 +2001,7 @@ async function saveAttempt() {
         <div class="review-q">
           <span class="review-num">${i + 1}.</span>
           <span>${escHtml(q.question || '')}</span>
-          ${!activeQuizIsShared ? `<button class="btn-review-bookmark icon-btn" data-qi="${i}" title="Bookmark" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1rem;opacity:0.6">🔖</button>` : ''}
+          ${!activeQuizIsShared ? `<button class="btn-review-bookmark icon-btn" data-qi="${i}" title="Bookmark this question" style="margin-left:auto">🏷️</button>` : ''}
         </div>
         <div class="review-answer">
           ${isSkipped
@@ -2010,13 +2019,16 @@ async function saveAttempt() {
         const bmBtn = item.querySelector('.btn-review-bookmark');
         // Show filled if already bookmarked
         const bmKey = `${activeQuizId}:${i}`;
-        if (bookmarksIndexCache.has(bmKey)) { bmBtn.textContent = '🔖'; bmBtn.style.opacity = '1'; bmBtn.classList.add('bookmarked'); }
+        if (bookmarksIndexCache.has(bmKey)) {
+          bmBtn.textContent = '🔖'; bmBtn.classList.add('bookmarked'); bmBtn.title = 'Remove bookmark';
+        }
         bmBtn.addEventListener('click', async e => {
           e.stopPropagation();
-          const result = await bookmarkQuestion(q);
+          const result = await bookmarkQuestion(q, i);
           if (result === null) return;
-          bmBtn.style.opacity = result ? '1' : '0.4';
           bmBtn.classList.toggle('bookmarked', result);
+          bmBtn.textContent = result ? '🔖' : '🏷️';
+          bmBtn.title = result ? 'Remove bookmark' : 'Bookmark this question';
           if (result) bookmarksIndexCache.add(bmKey); else bookmarksIndexCache.delete(bmKey);
         });
       }
@@ -2777,12 +2789,15 @@ async function renderSharedSessions(sessions) {
 
 // Bookmark any question object directly (used by flashcard buttons)
 // Toggles the bookmark: returns true if now bookmarked, false if removed, null on error.
-async function bookmarkQuestion(q) {
+// Pass explicit questionIndex to avoid indexOf object-reference mismatch bug.
+async function bookmarkQuestion(q, questionIndex) {
   if (!currentUser || !q) return null;
   if (!activeQuizId) { toast('Open this quiz from its folder to bookmark questions.', 'error'); return null; }
 
-  const idx = activeQuizQuestions.indexOf(q);
-  const questionIndex = idx >= 0 ? idx : 0;
+  if (typeof questionIndex !== 'number' || questionIndex < 0) {
+    const idx = activeQuizQuestions.indexOf(q);
+    questionIndex = idx >= 0 ? idx : 0;
+  }
 
   // Check if already bookmarked
   const { data: existing } = await sb.from('bookmarks')
@@ -2834,18 +2849,17 @@ async function bookmarkCurrentQuestion() {
   const q = activeQuizQuestions[currentQ];
   if (!q) return;
 
-  const { error } = await sb.from('bookmarks').upsert({
-    user_id: currentUser.id,
-    quiz_id: activeQuizId,
-    quiz_title: activeQuizTitle || '',
-    question_index: currentQ,
-    question_text: q.question || '',
-    options: Array.isArray(q.options) ? q.options : [],
-    correct_index: typeof q.correctIndex === 'number' ? q.correctIndex : null,
-    explanation: q.explanation || ''
-  }, { onConflict: 'user_id,quiz_id,question_index' });
+  const result = await bookmarkQuestion(q, currentQ);
+  if (result === null) return; // error, no UI change
 
-  if (!error) toast('Question bookmarked!', 'success');
+  const btn = document.getElementById('btn-q-bookmark');
+  if (btn) {
+    btn.classList.toggle('bookmarked', result);
+    btn.textContent = result ? '🔖' : '🏷️';
+    btn.title = result ? 'Remove bookmark' : 'Bookmark this question';
+  }
+  const key = `${activeQuizId}:${currentQ}`;
+  if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
 }
 
 let bookmarksCache = [];
@@ -4410,7 +4424,7 @@ async function renderFlashcards(questions, setName) {
             <div class="flash-actions">
               <button class="icon-btn" title="Edit question">✏️</button>
               <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
+              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
             </div>
           </div>
           <p class="flash-question">${escHtml(q.question || '')}</p>
@@ -4423,7 +4437,7 @@ async function renderFlashcards(questions, setName) {
             <div class="flash-actions">
               <button class="icon-btn" title="Edit question">✏️</button>
               <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">🔖</button>
+              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
             </div>
           </div>
           <p class="flash-answer-line">✓ ${escHtml(correctOpt)}</p>
@@ -4458,9 +4472,12 @@ async function renderFlashcards(questions, setName) {
     card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
-        const result = await bookmarkQuestion(q);
+        const result = await bookmarkQuestion(q, i); // pass i explicitly — avoids indexOf mismatch
         if (result === null) return; // error — no UI change
-        card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(b => b.classList.toggle('bookmarked', result));
+        card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(b => {
+          b.classList.toggle('bookmarked', result);
+          b.textContent = result ? '🔖' : '🏷️';
+        });
         card.classList.toggle('flash-card--bookmarked', result);
         card.dataset.bookmarked = result ? '1' : '0';
         if (activeQuizId) {
@@ -5272,6 +5289,9 @@ origBeginBtn?.addEventListener('click', () => {
 
     activeQuizQuestions = pool;
     document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
+
+    // Pre-load bookmark cache so btn-q-bookmark is correct from Q1
+    refreshBookmarksIndex();
 
     window._origRenderPlayer = window.renderPlayer;
     window.renderPlayer = renderPlayerReal;
