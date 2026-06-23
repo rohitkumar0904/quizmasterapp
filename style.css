@@ -3100,6 +3100,24 @@ select:focus {
   margin-bottom: 1.75rem;
 }
 
+/* Tracker chart full-width bleed */
+#my-tracker-section .tracker-chart-wrap,
+#up-tracker-section .tracker-chart-wrap {
+  margin-left: -2.5rem;
+  margin-right: -2.5rem;
+  padding-left: 2.5rem;
+  padding-right: 2.5rem;
+}
+@media (max-width: 768px) {
+  #my-tracker-section .tracker-chart-wrap,
+  #up-tracker-section .tracker-chart-wrap {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
 .contribution-calendar-wrap {
   margin-top: 0.75rem;
   overflow-x: auto;
@@ -3577,6 +3595,26 @@ select:focus {
   gap: 0.4rem;
 }
 
+.note-tag-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s;
+}
+.note-tag-picker-item:hover {
+  background: var(--accent-light, #f0f4ff);
+}
+
 .note-tag-option {
   display: flex;
   align-items: center;
@@ -3672,9 +3710,22 @@ select:focus {
   font-size: 0.9rem;
   line-height: 1.65;
   color: var(--ink);
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.5rem;
   white-space: pre-wrap;
 }
+
+.note-read-more {
+  background: none;
+  border: none;
+  color: var(--accent, #e8703a);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+.note-read-more:hover { text-decoration: underline; }
 
 .note-card-tags {
   display: flex;
