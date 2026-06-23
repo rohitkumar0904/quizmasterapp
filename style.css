@@ -1064,8 +1064,17 @@ select:focus {
 
 .icon-btn.bookmarked {
   border-color: var(--saffron);
-  background: var(--saffron-soft);
+  background: var(--saffron);
   color: var(--ink);
+  box-shadow: 0 0 0 3px var(--saffron-soft);
+}
+
+/* Back face of flipped flashcard */
+.flash-card-back .icon-btn.bookmarked {
+  background: var(--saffron);
+  border-color: var(--saffron);
+  color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(245,168,50,0.25);
 }
 
 .question-tag {
