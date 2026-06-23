@@ -187,6 +187,7 @@ async function onSignedIn(user) {
     document.querySelectorAll(sel).forEach(el => el.style.display = '');
   });
   populateUI();
+  initNotesUI(); // ← ek baar, DOM ready hone ke baad
   await Promise.all([
     loadFolders(),
     loadInbox(),
@@ -948,6 +949,7 @@ function renderQuizzes() {
       activeQuizTitle = quiz.title;
       activeQuizQuestions = Array.isArray(quiz.questions) ? quiz.questions : [];
       activeFullQuizQuestions = [];
+      activeQuizIsShared = false;
       document.getElementById('setup-quiz-title').textContent = quiz.title;
       document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
       // Reset range selectors to cover the full quiz by default
@@ -1175,6 +1177,7 @@ async function openFriendProfile(friend, fromView) {
     renderUserProfileStats(profile),
     renderUserPublicLibrary(profile, isSelf),
     buildActivityCalendarReal(profile.id, 'up-contribution-grid', 'up-contribution-months'),
+    renderUserTrackerChart(profile.id),
   ]);
 }
 
@@ -1316,10 +1319,185 @@ async function loadMyProfileStats() {
   // Highlight streak card if active
   const streakCard = document.getElementById('stat-streak')?.closest('.profile-stat-card');
   if (streakCard) streakCard.classList.toggle('profile-stat-card--streak-active', current > 0);
+
+  // Render tracker activity chart on my profile
+  renderMyTrackerChart(currentUser.id);
 }
 
 async function renderFriendPublicLibrary(friend, isSelf) {
   return renderUserPublicLibrary(friend, isSelf);
+}
+
+async function renderUserTrackerChart(userId) {
+  const section = document.getElementById('up-tracker-section');
+  const chart   = document.getElementById('up-tracker-bar-chart');
+  const statsEl = document.getElementById('up-tracker-stats');
+  if (!section || !chart) return;
+
+  // Local date helper — avoids UTC vs IST mismatch (toISOString is UTC, India is +5:30)
+  const localDateKey = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  };
+  // Load tracker_days for this user (last 1 year)
+  const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 365);
+  const fromKey = localDateKey(fromDate);
+  const { data: tasks } = await sb.from('tracker_tasks').select('id').eq('user_id', userId);
+  if (!tasks || !tasks.length) { section.style.display = 'none'; return; }
+
+  const { data: days } = await sb.from('tracker_days')
+    .select('date_key, task_id, done')
+    .eq('user_id', userId)
+    .eq('done', true)
+    .gte('date_key', fromKey);
+
+  // Show section first so browser computes layout before drawChart runs
+  section.style.display = '';
+  if (!days || !days.length) { section.style.display = 'none'; return; }
+
+  // Build score map { date_key: count }
+  const scoreMap = {};
+  days.forEach(d => { scoreMap[d.date_key] = (scoreMap[d.date_key] || 0) + 1; });
+
+  let upTrackerRange = 30;
+
+  function drawChart(range) {
+    chart.innerHTML = '';
+    const today = localDateKey(new Date());
+    const allKeys = Object.keys(scoreMap).sort();
+    let keys = [];
+    if (range === 0) {
+      keys = allKeys;
+    } else {
+      for (let i = range-1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        keys.push(localDateKey(d));
+      }
+    }
+    const scores = keys.map(k => scoreMap[k] || 0);
+    const maxS   = Math.max(...scores, 1);
+    const totalDone  = scores.reduce((a,b) => a+b, 0);
+    const activeDays = scores.filter(s => s > 0).length;
+
+    const PX_PER_TASK = 5; // change this to control height per task
+    scores.forEach((s, i) => {
+      const bar = document.createElement('div');
+      const h = s > 0 ? Math.min(s * PX_PER_TASK, 110) : 2;
+      bar.style.cssText = `flex:1;border-radius:3px 3px 0 0;min-height:2px;background:var(--accent,#f5c842);opacity:${s>0?0.85:0.15};height:${h}px;cursor:pointer;transition:opacity 0.2s`;
+      bar.title = `${keys[i]}: ${s} tasks`;
+      bar.addEventListener('mouseenter', () => bar.style.opacity = '1');
+      bar.addEventListener('mouseleave', () => bar.style.opacity = s>0 ? '0.85' : '0.15');
+      chart.appendChild(bar);
+    });
+
+    // Stats
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">✅ ${totalDone} tasks done</span>
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">📅 ${activeDays} active days</span>
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">📊 avg ${activeDays ? Math.round(totalDone/activeDays*10)/10 : 0}/day</span>
+      `;
+    }
+  }
+
+  // Double rAF: first frame shows section, second frame has correct offsetWidth
+  requestAnimationFrame(() => requestAnimationFrame(() => drawChart(upTrackerRange)));
+
+  // Range buttons
+  document.querySelectorAll('#up-tracker-range-btns .bar-range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#up-tracker-range-btns .bar-range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      upTrackerRange = +btn.dataset.range;
+      drawChart(upTrackerRange);
+    });
+  });
+}
+
+async function renderMyTrackerChart(userId) {
+  const section = document.getElementById('my-tracker-section');
+  const chart   = document.getElementById('my-tracker-bar-chart');
+  const statsEl = document.getElementById('my-tracker-stats');
+  if (!section || !chart) return;
+
+  const localDateKey = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 365);
+  const fromKey = localDateKey(fromDate);
+
+  const { data: tasks } = await sb.from('tracker_tasks').select('id').eq('user_id', userId);
+  if (!tasks || !tasks.length) { section.style.display = 'none'; return; }
+
+  const { data: days } = await sb.from('tracker_days')
+    .select('date_key, task_id, done')
+    .eq('user_id', userId)
+    .eq('done', true)
+    .gte('date_key', fromKey);
+
+  section.style.display = '';
+  if (!days || !days.length) { section.style.display = 'none'; return; }
+
+  const scoreMap = {};
+  days.forEach(d => { scoreMap[d.date_key] = (scoreMap[d.date_key] || 0) + 1; });
+
+  let myTrackerRange = 30;
+
+  function drawChart(range) {
+    chart.innerHTML = '';
+    const allKeys = Object.keys(scoreMap).sort();
+    let keys = [];
+    if (range === 0) {
+      keys = allKeys;
+    } else {
+      for (let i = range-1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        keys.push(localDateKey(d));
+      }
+    }
+    const scores = keys.map(k => scoreMap[k] || 0);
+    const maxS   = Math.max(...scores, 1);
+    const totalDone  = scores.reduce((a,b) => a+b, 0);
+    const activeDays = scores.filter(s => s > 0).length;
+
+    const PX_PER_TASK = 5; // change this to control height per task
+    scores.forEach((s, i) => {
+      const bar = document.createElement('div');
+      const h = s > 0 ? Math.min(s * PX_PER_TASK, 110) : 2;
+      bar.style.cssText = `flex:1;border-radius:3px 3px 0 0;min-height:2px;background:var(--accent,#f5c842);opacity:${s>0?0.85:0.15};height:${h}px;cursor:pointer;transition:opacity 0.2s`;
+      bar.title = `${keys[i]}: ${s} tasks`;
+      bar.addEventListener('mouseenter', () => bar.style.opacity = '1');
+      bar.addEventListener('mouseleave', () => bar.style.opacity = s>0 ? '0.85' : '0.15');
+      chart.appendChild(bar);
+    });
+
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">✅ ${totalDone} tasks done</span>
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">📅 ${activeDays} active days</span>
+        <span style="font-size:0.78rem;background:var(--paper-raised,#1a1a2e);padding:4px 10px;border-radius:99px;color:var(--ink-muted)">📊 avg ${activeDays ? Math.round(totalDone/activeDays*10)/10 : 0}/day</span>
+      `;
+    }
+  }
+
+  requestAnimationFrame(() => requestAnimationFrame(() => drawChart(myTrackerRange)));
+
+  document.querySelectorAll('#my-tracker-range-btns .bar-range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#my-tracker-range-btns .bar-range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      myTrackerRange = +btn.dataset.range;
+      drawChart(myTrackerRange);
+    });
+  });
 }
 
 async function renderUserPublicLibrary(friend, isSelf) {
@@ -1709,6 +1887,7 @@ let activeQuizQuestions = [];
 let activeFullQuizQuestions = [];
 let activeQuizSessionId = null; // shared/group quiz session for leaderboard
 let currentShareQuizId  = null;
+let activeQuizIsShared  = false; // true for inbox/session quizzes — hides bookmark in result
 
 // ── QUIZ PLAYER INTEGRATION ────────────────────────────────────
 // Overrides renderPlayer to use real questions
@@ -1813,6 +1992,7 @@ async function saveAttempt() {
         <div class="review-q">
           <span class="review-num">${i + 1}.</span>
           <span>${escHtml(q.question || '')}</span>
+          ${!activeQuizIsShared ? `<button class="btn-review-bookmark icon-btn" data-qi="${i}" title="Bookmark" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1rem;opacity:0.6">🔖</button>` : ''}
         </div>
         <div class="review-answer">
           ${isSkipped
@@ -1825,6 +2005,22 @@ async function saveAttempt() {
         </div>
         ${q.explanation ? `<p class="review-explanation">${escHtml(q.explanation)}</p>` : ''}
       `;
+
+      if (!activeQuizIsShared) {
+        const bmBtn = item.querySelector('.btn-review-bookmark');
+        // Show filled if already bookmarked
+        const bmKey = `${activeQuizId}:${i}`;
+        if (bookmarksIndexCache.has(bmKey)) { bmBtn.textContent = '🔖'; bmBtn.style.opacity = '1'; bmBtn.classList.add('bookmarked'); }
+        bmBtn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const result = await bookmarkQuestion(q);
+          if (result === null) return;
+          bmBtn.style.opacity = result ? '1' : '0.4';
+          bmBtn.classList.toggle('bookmarked', result);
+          if (result) bookmarksIndexCache.add(bmKey); else bookmarksIndexCache.delete(bmKey);
+        });
+      }
+
       reviewList.appendChild(item);
     });
   }
@@ -2556,6 +2752,7 @@ async function renderSharedSessions(sessions) {
       activeQuizQuestions = Array.isArray(s.questions) ? s.questions : [];
       activeFullQuizQuestions = [];
       activeQuizSessionId = s.id;
+      activeQuizIsShared  = true;
       document.getElementById('setup-quiz-title').textContent = s.title;
       document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
       applySessionTimer(s.time_limit_seconds || 0);
@@ -2771,13 +2968,18 @@ function renderBookmarks() {
 
 // ── NOTES ────────────────────────────────────────────────────
 async function saveNote(body, tags) {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('notes').insert({
+  if (!currentUser) { toast('Login required', 'error'); return null; }
+  const payload = {
     user_id: currentUser.id,
     body,
-    tags
-  }).select().single();
-  if (error) { toast('Could not save note: ' + error.message, 'error'); return null; }
+    tags: tags || []
+  };
+  const { data, error } = await sb.from('notes').insert(payload).select().single();
+  if (error) {
+    console.error('saveNote error:', error);
+    toast('Save failed: ' + error.message, 'error');
+    return null;
+  }
   return data;
 }
 
@@ -2799,31 +3001,227 @@ function renderSavedNotes(notes) {
   if (notes.length === 0) { if (empty) empty.style.display = 'block'; return; }
   if (empty) empty.style.display = 'none';
 
+  const PREVIEW_LEN = 180; // chars before "Read more"
+
   notes.forEach(note => {
     const card = document.createElement('article');
     card.className = 'note-card';
     card.dataset.noteId = note.id;
+
     const tagsHtml = (note.tags || []).map(t =>
       `<span class="note-tag-chip note-tag-chip--${t.type}">${t.type === 'folder' ? '📁' : '📝'} ${escHtml(t.label)}</span>`
     ).join('');
+
+    const body     = note.body || '';
+    const isLong   = body.length > PREVIEW_LEN;
+    const preview  = isLong ? escHtml(body.slice(0, PREVIEW_LEN)) + '…' : escHtml(body);
+    const full     = escHtml(body);
+
     card.innerHTML = `
       <div class="note-card-head">
         <div class="note-card-meta">
           <span class="note-card-date">${new Date(note.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
         </div>
         <div class="note-card-actions">
+          <button class="icon-btn btn-edit-note" title="Edit note">✏️</button>
           <button class="icon-btn btn-delete-note" title="Delete note">🗑️</button>
         </div>
       </div>
-      <p class="note-card-body">${escHtml(note.body)}</p>
+      <p class="note-card-body" data-full="${escHtml(body)}" data-collapsed="true">${preview}</p>
+      ${isLong ? `<button class="note-read-more">Read more ▾</button>` : ''}
       ${tagsHtml ? `<div class="note-card-tags">${tagsHtml}</div>` : ''}
     `;
+
+    // Read more toggle
+    if (isLong) {
+      const readBtn = card.querySelector('.note-read-more');
+      const bodyEl  = card.querySelector('.note-card-body');
+      readBtn?.addEventListener('click', () => {
+        const collapsed = bodyEl.dataset.collapsed === 'true';
+        bodyEl.innerHTML = collapsed ? full : preview;
+        bodyEl.dataset.collapsed = collapsed ? 'false' : 'true';
+        readBtn.textContent = collapsed ? 'Read less ▴' : 'Read more ▾';
+      });
+    }
+
+    // Delete
     card.querySelector('.btn-delete-note').addEventListener('click', async () => {
       await sb.from('notes').delete().eq('id', note.id);
       card.remove();
       toast('Note deleted.', 'info');
     });
+
     list.appendChild(card);
+  });
+}
+
+// ── NOTES UI HANDLERS ────────────────────────────────────────
+function initNotesUI() {
+  if (window._notesUIInited) return;
+  window._notesUIInited = true;
+  // State
+  let noteTags       = [];   // [{type:'folder'|'quiz', id, label}]
+  let noteTagMode    = null; // 'folder' | 'quiz'
+  let editingNoteId  = null;
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function getTextarea()   { return document.getElementById('note-textarea'); }
+  function getComposer()   { return document.getElementById('note-composer'); }
+  function getTagRow()     { return document.getElementById('note-tag-row'); }
+  function getSaveBtn()    { return document.getElementById('btn-save-note'); }
+
+  function renderTagRow() {
+    const row = getTagRow();
+    if (!row) return;
+    row.innerHTML = noteTags.map((t, i) =>
+      `<span class="note-tag-chip note-tag-chip--${t.type}">
+        ${t.type === 'folder' ? '📁' : '📝'} ${escHtml(t.label)}
+        <button class="note-tag-chip-remove" data-idx="${i}">✕</button>
+      </span>`
+    ).join('');
+    row.querySelectorAll('.note-tag-chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        noteTags.splice(+btn.dataset.idx, 1);
+        renderTagRow();
+      });
+    });
+  }
+
+  function openComposer(note = null) {
+    const ta = getTextarea();
+    const btn = getSaveBtn();
+    if (note) {
+      editingNoteId = note.id;
+      if (ta) ta.value = note.body || '';
+      noteTags = note.tags ? [...note.tags] : [];
+      if (btn) btn.textContent = 'Update Note';
+    } else {
+      editingNoteId = null;
+      if (ta) ta.value = '';
+      noteTags = [];
+      if (btn) btn.textContent = 'Save Note';
+    }
+    renderTagRow();
+    if (ta) ta.focus();
+    const dateEl = document.getElementById('note-today-date');
+    if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function closeComposer() {
+    editingNoteId = null;
+    noteTags = [];
+    const ta = getTextarea();
+    if (ta) ta.value = '';
+    renderTagRow();
+    const btn = getSaveBtn();
+    if (btn) btn.textContent = 'Save Note';
+  }
+
+  function closeTagPicker() {
+    const picker = document.getElementById('note-tag-picker');
+    if (picker) picker.style.display = 'none';
+    noteTagMode = null;
+  }
+
+  // ── New Note button ─────────────────────────────────────────
+  document.getElementById('btn-new-note')?.addEventListener('click', () => {
+    openComposer();
+  });
+
+  // ── Save / Update Note ──────────────────────────────────────
+  document.getElementById('btn-save-note')?.addEventListener('click', async () => {
+    const body = (document.getElementById('note-textarea')?.value || '').trim();
+    console.log('Save note clicked, body:', body, 'user:', currentUser?.id);
+    if (!body) { toast('Kuch likho pehle!', 'error'); return; }
+
+    const btn = document.getElementById('btn-save-note');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    if (editingNoteId) {
+      const { error } = await sb.from('notes')
+        .update({ body, tags: noteTags })
+        .eq('id', editingNoteId);
+      if (error) { toast('Update failed: ' + error.message, 'error'); console.error(error); }
+      else { toast('Note updated! ✓', 'success'); closeComposer(); loadNotes(); }
+    } else {
+      const data = await saveNote(body, noteTags);
+      if (data) { toast('Note saved! ✓', 'success'); closeComposer(); loadNotes(); }
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = editingNoteId ? 'Update Note' : 'Save Note'; }
+  });
+
+  // ── Tag: Folder ─────────────────────────────────────────────
+  document.getElementById('btn-tag-folder')?.addEventListener('click', () => {
+    noteTagMode = 'folder';
+    const label = document.getElementById('note-tag-picker-label');
+    if (label) label.textContent = 'Select a Folder to tag';
+    const list = document.getElementById('note-tag-picker-list');
+    if (!list) return;
+    list.innerHTML = '';
+    foldersCache.filter(f => !f.parent_id).forEach(f => {
+      const btn = document.createElement('button');
+      btn.className = 'note-tag-picker-item';
+      btn.textContent = '📁 ' + f.name;
+      btn.addEventListener('click', () => {
+        if (!noteTags.find(t => t.type === 'folder' && t.id === f.id)) {
+          noteTags.push({ type: 'folder', id: f.id, label: f.name });
+          renderTagRow();
+        }
+        closeTagPicker();
+      });
+      list.appendChild(btn);
+    });
+    if (!foldersCache.length) list.innerHTML = '<p style="color:var(--text-muted);padding:1rem;font-size:0.85rem">No folders yet</p>';
+    document.getElementById('note-tag-picker').style.display = '';
+  });
+
+  // ── Tag: Quiz ───────────────────────────────────────────────
+  document.getElementById('btn-tag-quiz')?.addEventListener('click', () => {
+    noteTagMode = 'quiz';
+    const label = document.getElementById('note-tag-picker-label');
+    if (label) label.textContent = 'Select a Quiz to tag';
+    const list = document.getElementById('note-tag-picker-list');
+    if (!list) return;
+    list.innerHTML = '';
+    quizzesCache.forEach(q => {
+      const btn = document.createElement('button');
+      btn.className = 'note-tag-picker-item';
+      btn.textContent = '📝 ' + q.title;
+      btn.addEventListener('click', () => {
+        if (!noteTags.find(t => t.type === 'quiz' && t.id === q.id)) {
+          noteTags.push({ type: 'quiz', id: q.id, label: q.title });
+          renderTagRow();
+        }
+        closeTagPicker();
+      });
+      list.appendChild(btn);
+    });
+    if (!quizzesCache.length) list.innerHTML = '<p style="color:var(--text-muted);padding:1rem;font-size:0.85rem">No quizzes yet</p>';
+    document.getElementById('note-tag-picker').style.display = '';
+  });
+
+  // ── Close tag picker ─────────────────────────────────────────
+  document.getElementById('btn-close-tag-picker')?.addEventListener('click', closeTagPicker);
+
+  // ── Edit button on note cards (delegated) ───────────────────
+  document.getElementById('notes-list')?.addEventListener('click', async e => {
+    const editBtn = e.target.closest('.btn-edit-note');
+    if (!editBtn) return;
+    const card = editBtn.closest('[data-note-id]');
+    if (!card) return;
+    const noteId = card.dataset.noteId;
+    // Fetch fresh note
+    const { data } = await sb.from('notes').select('*').eq('id', noteId).single();
+    if (data) openComposer(data);
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  // Open composer by default when notes view opens
+  document.querySelectorAll('.nav-link[data-view]').forEach(a => {
+    if (a.dataset.view === 'notes') {
+      a.addEventListener('click', () => setTimeout(() => openComposer(), 100));
+    }
   });
 }
 
@@ -3220,6 +3618,7 @@ ${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small 
           activeQuizTitle     = quiz.title;
           activeQuizQuestions = quiz.questions || [];
           activeQuizSessionId = msg.body.session_id || null;
+          activeQuizIsShared  = true;
           document.getElementById('setup-quiz-title').textContent  = quiz.title;
           document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
           applySessionTimer(msg.body.time_limit_seconds || 0);
@@ -3249,6 +3648,12 @@ ${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small 
       if (msg.body?.folder_id) {
         const { data: folder } = await sb.from('folders').select('name').eq('id', msg.body.folder_id).single();
         await importSharedChapter(msg.body.folder_id, folder?.name);
+        // Mark as read so sender sees "✓ Accepted"
+        if (!msg.is_read) {
+          msg.is_read = true;
+          await sb.from('inbox_messages').update({ is_read: true }).eq('id', msg.id);
+          updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
+        }
       }
     });
 
