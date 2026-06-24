@@ -219,6 +219,9 @@ input[type="radio"]:checked + .fce-option-letter {
   cursor:pointer;padding:4px 8px;border-radius:7px;border:1px solid var(--trk-border);
   background:var(--trk-card2);transition:all 0.2s; }
 #view-tracker .day-chk:hover { border-color:var(--trk-border2); }
+#view-tracker .day-chk input[type="checkbox"] { display:none; }
+#view-tracker .day-chk.selected { border-color:var(--trk-accent);color:var(--trk-accent);background:#1a1800; }
+#view-tracker .day-chk.selected-daily { border-color:var(--trk-accent2);color:var(--trk-accent2);background:#0a1a2a; }
 #view-tracker .add-submit { background:var(--trk-accent);border:none;color:#000;padding:9px 18px;
   border-radius:10px;cursor:pointer;font-family:'Syne',sans-serif;font-weight:800;font-size:0.84rem;
   transition:all 0.2s;flex:1; }
@@ -1943,9 +1946,9 @@ Rules:
 <!-- Supabase client (must load first) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Static UI logic -->
-<script src="oldstatic.js?v=4"></script>
+<script src="oldstatic.js?v=5"></script>
 <!-- Supabase integration -->
-<script src="app.js?v=4.6"></script>
+<script src="app.js?v=5.6"></script>
   <script src="qm-cache.js"></script>
 <script src="qm-sidebar-chat.js"></script>
 <script>
@@ -2027,7 +2030,7 @@ document.getElementById('btn-update-app')?.addEventListener('click', () => {
   }
 });
 </script>
-<script src="tracker.js"></script>
+<script src="tracker.js?v=1.0"></script>
   <!-- Pomodoro learning flow -->
 <script src="pomodoro.js"></script>
 <!-- Pomodoro race multiplayer -->
