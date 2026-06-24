@@ -592,15 +592,36 @@ create policy "own notes" on tracker_notes for all using (auth.uid() = user_id);
         </div>
       </div>`;
 
-    // Daily toggle logic
+    // Edit day toggle logic with visual feedback
+    function updateEditDayStyles() {
+      document.querySelectorAll(`label:has(#edit-daily-${id}), label:has(.edit-day-${id})`).forEach(label => {
+        const inp = label.querySelector('input');
+        const isDaily = inp?.id === `edit-daily-${id}`;
+        label.classList.toggle('selected', !isDaily && !!inp?.checked);
+        label.classList.toggle('selected-daily', isDaily && !!inp?.checked);
+      });
+    }
+    updateEditDayStyles(); // initial state
+
     document.getElementById('edit-daily-'+id).addEventListener('change', function() {
-      document.querySelectorAll('.edit-day-'+id).forEach(c => { c.checked=false; c.closest('label').style.cssText=''; });
-      this.closest('label').style.cssText = this.checked ? 'border-color:var(--trk-accent2);color:var(--trk-accent2)' : '';
+      document.querySelectorAll('.edit-day-'+id).forEach(c => { c.checked=false; });
+      updateEditDayStyles();
     });
     document.querySelectorAll('.edit-day-'+id).forEach(c => {
       c.addEventListener('change', function() {
         const dl = document.getElementById('edit-daily-'+id);
-        if(this.checked && dl.checked) { dl.checked=false; dl.closest('label').style.cssText=''; }
+        if(this.checked && dl.checked) { dl.checked=false; }
+        updateEditDayStyles();
+      });
+    });
+
+    // Label click → toggle (checkbox hidden)
+    document.querySelectorAll(`label:has(#edit-daily-${id}), label:has(.edit-day-${id})`).forEach(label => {
+      label.addEventListener('click', function() {
+        const inp = this.querySelector('input');
+        if (!inp) return;
+        inp.checked = !inp.checked;
+        inp.dispatchEvent(new Event('change'));
       });
     });
   };
@@ -666,15 +687,37 @@ create policy "own notes" on tracker_notes for all using (auth.uid() = user_id);
       trkCurrent = todayKey(); renderTrkToday();
     });
 
-    // Daily checkbox toggle
+    // Daily checkbox toggle — Add task
+    function updateDayChkStyles() {
+      document.querySelectorAll('#trkDayChks .day-chk').forEach(label => {
+        const inp = label.querySelector('input');
+        const isDaily = inp?.value === 'daily';
+        label.classList.toggle('selected', !isDaily && !!inp?.checked);
+        label.classList.toggle('selected-daily', isDaily && !!inp?.checked);
+      });
+    }
+
     document.getElementById('trkChkDaily')?.addEventListener('change', function() {
       if (this.checked) {
         document.querySelectorAll('#trkDayChks input:not(#trkChkDaily)').forEach(c => c.checked = false);
       }
+      updateDayChkStyles();
     });
+
     document.querySelectorAll('#trkDayChks input:not(#trkChkDaily)').forEach(c => {
       c.addEventListener('change', function() {
         if (this.checked) document.getElementById('trkChkDaily').checked = false;
+        updateDayChkStyles();
+      });
+    });
+
+    // Label click → toggle checkbox (since checkbox is hidden)
+    document.querySelectorAll('#trkDayChks .day-chk').forEach(label => {
+      label.addEventListener('click', function() {
+        const inp = this.querySelector('input');
+        if (!inp) return;
+        inp.checked = !inp.checked;
+        inp.dispatchEvent(new Event('change'));
       });
     });
   }
