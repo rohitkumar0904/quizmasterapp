@@ -589,7 +589,14 @@ function startTimer() {
     timeRemaining--;
     updateTimerDisplay();
     if (timeRemaining <= 10) box.classList.add('timer-low');
-    if (timeRemaining <= 0) { stopTimer(); showView('result'); }
+    if (timeRemaining <= 0) {
+      stopTimer();
+      showView('result');
+      if (typeof _attemptSaved !== 'undefined' && !_attemptSaved) {
+        _attemptSaved = true;
+        setTimeout(() => { if (typeof saveAttempt === 'function') saveAttempt(); }, 50);
+      }
+    }
   }, 1000);
 }
 function stopTimer()  { clearInterval(timerInterval); document.getElementById('player-timer').classList.remove('timer-low'); }
