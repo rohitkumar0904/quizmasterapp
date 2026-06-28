@@ -53,104 +53,74 @@ create policy "own notes" on tracker_notes for all using (auth.uid() = user_id);
   /* ── Default tasks (seed on first load) ─────────────────── */
   const DEFAULT_TASKS = [
 
-    /* ════════════════ 🌅 MORNING ════════════════ */
+    /* ══════════════════════════════════════════════════════
+       SSC CGL Full Schedule
+       MORNING: Vocab + GS New Chapter + Maths/Reasoning Practice
+       AFTERNOON: Mock Analysis + Grammar + Weak Topic + Dopahar GS
+       EVENING: Vocab Recall + Idioms + GS Revision
+       NIGHT: GS Night + English Notes + Final Vocab Recall
+    ══════════════════════════════════════════════════════ */
 
-    // English
-    {name:'Vocabulary — 7 New Words With Examples & Sentences',  cat:'english',   sec:'subah',   dur:'25 min', days:'daily'},
-    {name:'Idioms & Phrases — 3 New + Previous Recall',          cat:'english',   sec:'subah',   dur:'15 min', days:'daily'},
-    {name:'Grammar — New Concept / Rule (Error Spotting Focus)',  cat:'english',   sec:'subah',   dur:'20 min', days:'daily'},
+    /* 🌅 MORNING */
 
-    // GS — History (rotate daily)
-    {name:'Modern History — New Chapter Reading',                 cat:'gs',        sec:'subah',   dur:'40 min', days:'mon,thu'},
-    {name:'Medieval History — New Chapter Reading',               cat:'gs',        sec:'subah',   dur:'40 min', days:'tue,fri'},
-    {name:'Ancient History — New Chapter Reading',                cat:'gs',        sec:'subah',   dur:'40 min', days:'wed,sat'},
+    // Vocab — daily
+    {name:'Vocabulary — 7 New Words With Examples',              cat:'english',   sec:'subah',   dur:'30 min', days:'daily'},
 
-    // GS — Other subjects (rotate)
-    {name:'Geography — New Chapter Reading',                      cat:'gs',        sec:'subah',   dur:'40 min', days:'mon,thu'},
-    {name:'Polity — New Chapter Reading',                         cat:'gs',        sec:'subah',   dur:'40 min', days:'tue,fri'},
-    {name:'Economy — New Chapter Reading',                        cat:'gs',        sec:'subah',   dur:'40 min', days:'wed,sat'},
-    {name:'Science — Biology New Chapter',                        cat:'gs',        sec:'subah',   dur:'30 min', days:'mon,wed,fri'},
-    {name:'Science — Chemistry New Chapter',                      cat:'gs',        sec:'subah',   dur:'30 min', days:'tue,sat'},
-    {name:'Science — Physics New Chapter',                        cat:'gs',        sec:'subah',   dur:'30 min', days:'thu'},
-    {name:'Static GK — New Topics (Awards, Books, Schemes)',      cat:'gs',        sec:'subah',   dur:'20 min', days:'daily'},
+    // Maths
+    {name:'Maths Practice Session',                              cat:'maths',     sec:'subah',   dur:'60 min', days:'mon,wed,fri'},
+    {name:'Maths Mock Test',                                     cat:'maths',     sec:'subah',   dur:'60 min', days:'tue,thu,sat,sun'},
 
-    // Maths Morning
-    {name:'Maths — Formula Revision (All Chapters)',              cat:'maths',     sec:'subah',   dur:'20 min', days:'daily'},
-    {name:'Maths — Chapter Practice (Algebra / SI-CI / Profit)',  cat:'maths',     sec:'subah',   dur:'40 min', days:'mon,wed,fri'},
-    {name:'Maths — Chapter Practice (Geometry / Mensuration)',    cat:'maths',     sec:'subah',   dur:'40 min', days:'tue,thu,sat'},
+    // GS New Chapter MWF
+    {name:'Modern History — New Chapter Reading',                cat:'gs',        sec:'subah',   dur:'45 min', days:'mon,wed,fri'},
+    {name:'Medieval History — New Chapter Reading',              cat:'gs',        sec:'subah',   dur:'45 min', days:'mon,wed,fri'},
+    {name:'Geography — New Chapter Reading',                     cat:'gs',        sec:'subah',   dur:'45 min', days:'mon,wed,fri'},
 
-    // Reasoning Morning
-    {name:'Reasoning — Chapter Practice (Series / Analogy)',      cat:'reasoning', sec:'subah',   dur:'30 min', days:'mon,wed,fri'},
-    {name:'Reasoning — Chapter Practice (Puzzle / Seating)',      cat:'reasoning', sec:'subah',   dur:'30 min', days:'tue,thu,sat'},
+    // GS New Chapter TTS
+    {name:'Ancient History — New Chapter Reading',               cat:'gs',        sec:'subah',   dur:'45 min', days:'tue,thu,sat'},
+    {name:'Polity — New Chapter Reading',                        cat:'gs',        sec:'subah',   dur:'45 min', days:'tue,thu,sat'},
+    {name:'Economy — New Chapter Reading',                       cat:'gs',        sec:'subah',   dur:'45 min', days:'tue,thu,sat'},
 
-    /* ════════════════ ☀️ AFTERNOON ════════════════ */
+    // GS New Chapter Sunday
+    {name:'Science — New Chapter Reading',                       cat:'gs',        sec:'subah',   dur:'45 min', days:'sun'},
 
-    // Sectional Mocks
-    {name:'Maths Sectional Mock — 25 Questions (Timed)',          cat:'maths',     sec:'dopahar', dur:'30 min', days:'mon,wed,fri'},
-    {name:'Reasoning Sectional Mock — 25 Questions (Timed)',      cat:'reasoning', sec:'dopahar', dur:'20 min', days:'tue,thu,sat'},
-    {name:'English Sectional Mock — 25 Questions (Timed)',        cat:'english',   sec:'dopahar', dur:'20 min', days:'mon,wed,fri'},
-    {name:'GS Sectional Mock — 25 Questions (Timed)',             cat:'gs',        sec:'dopahar', dur:'20 min', days:'tue,thu,sat'},
+    // Reasoning
+    {name:'Reasoning Practice Session',                          cat:'reasoning', sec:'subah',   dur:'60 min', days:'mon,wed,fri'},
+    {name:'Reasoning Mock Test',                                 cat:'reasoning', sec:'subah',   dur:'60 min', days:'tue,thu,sat,sun'},
 
-    // Mock Analysis
-    {name:'Mock Analysis — Wrong Qs, Silly Mistakes, Time Audit', cat:'analysis',  sec:'dopahar', dur:'60 min', days:'daily'},
+    /* ☀️ AFTERNOON */
 
-    // GS Revision Afternoon
-    {name:'Modern History — PYQ Practice (20 Qs)',                cat:'gs',        sec:'dopahar', dur:'20 min', days:'mon,thu'},
-    {name:'Medieval History — PYQ Practice (20 Qs)',              cat:'gs',        sec:'dopahar', dur:'20 min', days:'tue,fri'},
-    {name:'Ancient History — PYQ Practice (20 Qs)',               cat:'gs',        sec:'dopahar', dur:'20 min', days:'wed,sat'},
-    {name:'Geography — PYQ Practice (20 Qs)',                     cat:'gs',        sec:'dopahar', dur:'20 min', days:'mon,thu'},
-    {name:'Polity — PYQ Practice (20 Qs)',                        cat:'gs',        sec:'dopahar', dur:'20 min', days:'tue,fri'},
-    {name:'Economy — PYQ Practice (20 Qs)',                       cat:'gs',        sec:'dopahar', dur:'20 min', days:'wed,sat'},
+    {name:'Mock Test Analysis — Wrong Questions and Timing Issues', cat:'analysis', sec:'dopahar', dur:'30 min', days:'daily'},
+    {name:'Grammar — 120 Rules',                                 cat:'english',   sec:'dopahar', dur:'30 min', days:'daily'},
+    {name:'Geometry Daily Practice — 10 Questions',              cat:'maths',     sec:'dopahar', dur:'30 min', days:'mon,wed,fri'},
+    {name:'Number System Practice — 10 Questions',               cat:'maths',     sec:'dopahar', dur:'30 min', days:'tue,thu,sat,sun'},
+    {name:'Weak Topic Practice (Maths / Reasoning / English)',   cat:'analysis',  sec:'dopahar', dur:'30 min', days:'daily'},
 
-    /* ════════════════ 🌆 EVENING ════════════════ */
+    /* 🌆 EVENING */
 
-    // Complete Mock Test (alternate days)
-    {name:'Full Mock Test — All 4 Sections (100 Qs, 60 min)',     cat:'analysis',  sec:'shaam',   dur:'60 min', days:'tue,thu,sat'},
+    {name:'Vocabulary Evening Recall',                           cat:'english',   sec:'shaam',   dur:'20 min', days:'daily'},
+    {name:'Idioms — New Learning',                               cat:'english',   sec:'shaam',   dur:'20 min', days:'mon,wed,fri'},
+    {name:'Idioms Revision',                                     cat:'english',   sec:'shaam',   dur:'20 min', days:'tue,thu,sat,sun'},
 
-    // Revision
-    {name:'Vocabulary Evening Recall — 7 Words from Morning',     cat:'english',   sec:'shaam',   dur:'15 min', days:'daily'},
-    {name:'Idioms Revision — Last 7 Days',                        cat:'english',   sec:'shaam',   dur:'10 min', days:'daily'},
-    {name:'Grammar Practice — 15 Error Spotting / Fill Blanks',   cat:'english',   sec:'shaam',   dur:'20 min', days:'daily'},
+    // GS Revision Evening MWF
+    {name:'Modern History Revision',                             cat:'gs',        sec:'shaam',   dur:'20 min', days:'mon,wed,fri'},
+    {name:'Medieval History Revision',                           cat:'gs',        sec:'shaam',   dur:'20 min', days:'mon,wed,fri'},
+    {name:'Geography Revision',                                  cat:'gs',        sec:'shaam',   dur:'20 min', days:'mon,wed,fri'},
 
-    // GS Revision Evening
-    {name:'Science — Biology Revision + 15 Qs',                   cat:'gs',        sec:'shaam',   dur:'25 min', days:'mon,wed,fri'},
-    {name:'Science — Chemistry Revision + 15 Qs',                 cat:'gs',        sec:'shaam',   dur:'25 min', days:'tue,sat'},
-    {name:'Science — Physics Revision + 15 Qs',                   cat:'gs',        sec:'shaam',   dur:'25 min', days:'thu'},
-    {name:'Static GK Revision — Previous Topics Quick Recall',    cat:'gs',        sec:'shaam',   dur:'20 min', days:'daily'},
+    // GS Revision Evening TTS
+    {name:'Ancient History Revision',                            cat:'gs',        sec:'shaam',   dur:'20 min', days:'tue,thu,sat'},
+    {name:'Polity PYQ Revision',                                 cat:'gs',        sec:'shaam',   dur:'20 min', days:'tue,thu,sat'},
+    {name:'Economy Revision',                                    cat:'gs',        sec:'shaam',   dur:'20 min', days:'tue,thu,sat'},
 
-    // Maths Evening
-    {name:'Maths — Geometry 10 Qs Daily Practice',                cat:'maths',     sec:'shaam',   dur:'20 min', days:'daily'},
-    {name:'Maths — Number System / Simplification 10 Qs',         cat:'maths',     sec:'shaam',   dur:'20 min', days:'daily'},
+    // GS Revision Evening Sunday
+    {name:'Science Revision',                                    cat:'gs',        sec:'shaam',   dur:'20 min', days:'sun'},
 
-    // Reasoning Evening
-    {name:'Reasoning — Syllogism / Blood Relation 10 Qs',         cat:'reasoning', sec:'shaam',   dur:'15 min', days:'mon,wed,fri'},
-    {name:'Reasoning — Coding-Decoding / Direction 10 Qs',        cat:'reasoning', sec:'shaam',   dur:'15 min', days:'tue,thu,sat'},
+    /* 🌙 NIGHT */
 
-    /* ════════════════ 🌙 NIGHT ════════════════ */
-
-    // Night Revision
-    {name:'Modern History — Chapter Revision Notes',              cat:'gs',        sec:'raat',    dur:'20 min', days:'mon,thu'},
-    {name:'Medieval History — Chapter Revision Notes',            cat:'gs',        sec:'raat',    dur:'20 min', days:'tue,fri'},
-    {name:'Ancient History — Chapter Revision Notes',             cat:'gs',        sec:'raat',    dur:'20 min', days:'wed,sat'},
-    {name:'Polity — Chapter Revision Notes',                      cat:'gs',        sec:'raat',    dur:'20 min', days:'mon,thu'},
-    {name:'Economy — Chapter Revision Notes',                     cat:'gs',        sec:'raat',    dur:'20 min', days:'tue,fri'},
-    {name:'Geography — Chapter Revision Notes',                   cat:'gs',        sec:'raat',    dur:'20 min', days:'wed,sat'},
-
-    // English Night
-    {name:'English — Reading Comprehension Practice (1 Passage)', cat:'english',   sec:'raat',    dur:'20 min', days:'daily'},
-    {name:'Final Vocabulary Recall — All 7 Words + Meanings',     cat:'english',   sec:'raat',    dur:'10 min', days:'daily'},
-
-    // Maths Night
-    {name:'Maths — Weak Chapter Targeted Practice',               cat:'maths',     sec:'raat',    dur:'30 min', days:'mon,wed,fri'},
-    {name:'Maths — Formula Sheet Update & Revision',              cat:'maths',     sec:'raat',    dur:'15 min', days:'tue,thu,sat'},
-
-    // Reasoning Night
-    {name:'Reasoning — Weak Topic Targeted Practice',             cat:'reasoning', sec:'raat',    dur:'25 min', days:'mon,wed,fri'},
-    {name:'Reasoning — Previous Year Qs Practice',                cat:'reasoning', sec:'raat',    dur:'25 min', days:'tue,thu,sat'},
-
-    // Day Wrap
-    {name:'Full Mock Analysis (if taken today) — Error Log',      cat:'analysis',  sec:'raat',    dur:'30 min', days:'tue,thu,sat'},
-    {name:'Tomorrow Plan — Tasks Review + Priority Set',          cat:'analysis',  sec:'raat',    dur:'10 min', days:'daily'},
+    {name:'Science Revision',                                    cat:'gs',        sec:'raat',    dur:'30 min', days:'mon,wed,fri'},
+    {name:'Economics Revision and 30 Practice Questions',        cat:'gs',        sec:'raat',    dur:'45 min', days:'tue,thu,sat'},
+    {name:'Static GK Revision and Practice Questions',           cat:'gs',        sec:'raat',    dur:'45 min', days:'sun'},
+    {name:'English Notes and Verb Practice',                     cat:'english',   sec:'raat',    dur:'30 min', days:'daily'},
+    {name:'Final Vocabulary Recall',                             cat:'english',   sec:'raat',    dur:'15 min', days:'daily'},
   ];
 
   const SECTIONS = [
@@ -549,6 +519,7 @@ create policy "own notes" on tracker_notes for all using (auth.uid() = user_id);
     });
     list.innerHTML = html;
   }
+  window.renderTrkManage = function() { renderTrkManage(); };
   window.trkDelTask  = async (id) => { await trkDeleteTask(id); };
 
   window.trkEditTask = function(id) {
