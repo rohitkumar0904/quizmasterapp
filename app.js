@@ -2212,7 +2212,8 @@ function renderHistory(attempts) {
   }
   if (empty) empty.style.display = 'none';
 
-  attempts.forEach(a => {
+  // Show only top 10
+  attempts.slice(0, 10).forEach(a => {
     const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
     const el = document.createElement('div');
     el.className = 'history-item';
@@ -2228,8 +2229,21 @@ function renderHistory(attempts) {
         <span>${new Date(a.attempted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
         ${a.time_taken > 0 ? `<span>⏱ ${Math.floor(a.time_taken/60)}m ${a.time_taken%60}s</span>` : ''}
       </div>
+      <div class="history-item-actions">
+        <button class="btn btn--ghost btn--small btn-delete-attempt" title="Remove this attempt">🗑 Remove</button>
+      </div>
     `;
-    list.insertBefore(el, list.firstChild);
+    el.querySelector('.btn-delete-attempt').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Remove this attempt from history?')) return;
+      const { error } = await sb.from('quiz_attempts').delete().eq('id', a.id).eq('user_id', currentUser.id);
+      if (error) { toast('Could not remove attempt.', 'error'); return; }
+      el.remove();
+      if (!list.querySelectorAll('.history-item[data-attempt-id]').length) {
+        if (empty) empty.style.display = 'block';
+      }
+    });
+    list.appendChild(el);
   });
 }
 
@@ -2635,6 +2649,7 @@ function renderRaceHistory(rows) {
       <div class="race-hist-right">
         <div class="race-hist-badge">${resultLabel}</div>
         <button class="btn btn--ghost btn--small btn-race-leaderboard">🏆 Leaderboard</button>
+        <button class="btn btn--ghost btn--small btn-race-remove" title="Remove this race">🗑</button>
       </div>
     `;
     el.querySelector('.btn-race-leaderboard').addEventListener('click', () => {
@@ -2644,6 +2659,14 @@ function renderRaceHistory(rows) {
         totalQ: r.total_q, result: r.result,
         durationSecs: r.duration_secs, dateStr,
       });
+    });
+    el.querySelector('.btn-race-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Remove this race from history?')) return;
+      const { error } = await sb.from('pomo_race_history').delete().eq('id', r.id).eq('player_id', currentUser.id);
+      if (error) { toast('Could not remove race.', 'error'); return; }
+      el.remove();
+      if (!list.querySelectorAll('.race-hist-card').length && empty) empty.style.display = 'block';
     });
     list.appendChild(el);
   });
@@ -2755,8 +2778,29 @@ async function renderSharedSessions(sessions) {
       <div class="result-actions" style="margin-top:0.5rem">
         <button class="btn btn--primary btn--small btn-session-start">${attempted ? '🔁 Attempt Again' : '▶ Start Quiz'}</button>
         <button class="btn btn--ghost btn--small btn-session-leaderboard">🏆 Leaderboard</button>
+        <button class="btn btn--ghost btn--small btn-session-remove" title="Remove from your list">🗑 Remove</button>
       </div>
     `;
+
+    el.querySelector('.btn-session-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Remove this shared quiz from your list?')) return;
+      // Remove current user from member_ids array
+      const newMembers = (s.member_ids || []).filter(id => id !== currentUser.id);
+      let removeError = null;
+      if (s.host_id === currentUser.id) {
+        // Host: just delete the session entirely if they want to remove it
+        const { error } = await sb.from('quiz_sessions').delete().eq('id', s.id).eq('host_id', currentUser.id);
+        removeError = error;
+      } else {
+        const { error } = await sb.from('quiz_sessions').update({ member_ids: newMembers }).eq('id', s.id);
+        removeError = error;
+      }
+      if (removeError) { toast('Could not remove session.', 'error'); return; }
+      el.remove();
+      const remaining = list.querySelectorAll('.history-item');
+      if (!remaining.length && empty) empty.style.display = 'block';
+    });
 
     el.querySelector('.btn-session-start').addEventListener('click', () => {
       activeQuizId        = s.quiz_id;
@@ -3654,6 +3698,13 @@ ${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small 
       e.stopPropagation();
       if (msg.body?.quiz_id) {
         await importSharedQuiz(msg.body.quiz_id, msg.title, senderName);
+        // Mark as read so sender sees "✓ Accepted"
+        if (!msg.is_read) {
+          msg.is_read = true;
+          item.classList.remove('inbox-item--unread');
+          await sb.from('inbox_messages').update({ is_read: true }).eq('id', msg.id);
+          updateInboxBadge(inboxCache.filter(m => !m.is_read).length);
+        }
       }
     });
 
