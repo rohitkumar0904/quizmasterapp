@@ -1636,6 +1636,11 @@ select:focus {
   color: var(--slate);
   font-family: var(--font-mono);
 }
+.history-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
 .score--good, .score--ok, .score--low {
   font-family: var(--font-mono);
   font-weight: 700;
