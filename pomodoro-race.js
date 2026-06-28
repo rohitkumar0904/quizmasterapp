@@ -56,14 +56,26 @@ async function _launchRaceSetup(quizId, total) {
   pomodoroSettings.quizTimeMinutes     = Math.max(1, parseInt(document.getElementById('pomoQuizT')?.value)||20);
   pomodoroSettings.breakTimeMinutes    = Math.max(1, parseInt(document.getElementById('pomoBreakT')?.value)||5);
   pomodoroSettings.autoAdvance         = document.getElementById('pomoAutoAdv')?.checked !== false;
-  pomodoroSettings.shuffleOptions      = document.getElementById('pomoShuffleOpts')?.checked === true;
+  pomodoroSettings.shuffleOptions      = document.getElementById('pomoShuffleOpts')?.checked !== false; // default ON
 
   const qs = quiz.questions.slice(s-1, e);
   if (!qs.length) { toast('No questions in that range', 'error'); return; }
 
+  // Shuffle options within each question if enabled (default: true)
+  const applyOptShuffle = (qArr) => qArr.map(q => {
+    if (!q.options || !Array.isArray(q.options)) return q;
+    const order = q.options.map((_, i) => i).sort(() => Math.random() - 0.5);
+    return {
+      ...q,
+      options: order.map(i => q.options[i]),
+      correctIndex: order.indexOf(q.correctIndex)
+    };
+  });
+
+  const rawQs = pomodoroSettings.shuffleOptions ? applyOptShuffle(qs) : qs;
   const sections = [];
-  for (let i = 0; i < qs.length; i += pomodoroSettings.questionsPerSection)
-    sections.push(qs.slice(i, i + pomodoroSettings.questionsPerSection));
+  for (let i = 0; i < rawQs.length; i += pomodoroSettings.questionsPerSection)
+    sections.push(rawQs.slice(i, i + pomodoroSettings.questionsPerSection));
 
   document.getElementById('pomoModal')?.remove();
   window._raceSections  = sections;
