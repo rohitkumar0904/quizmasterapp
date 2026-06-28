@@ -10,7 +10,7 @@ let pomodoroSettings = {
   quizTimeMinutes     : 20,
   breakTimeMinutes    : 5,
   autoAdvance         : true,
-  shuffleOptions      : false
+  shuffleOptions      : true
 };
 
 let pomodoroState = {
@@ -182,7 +182,7 @@ function startPomodoroSetup(quizId) {
           Auto-advance to quiz when study timer ends
         </label>
         <label class="pomo-toggle-label" style="margin-top:0.55rem">
-          <input type="checkbox" id="pomoShuffleOpts">
+          <input type="checkbox" id="pomoShuffleOpts" checked>
           <span class="pomo-toggle-track"><span class="pomo-toggle-thumb"></span></span>
           Shuffle answer options on flashcards
         </label>
@@ -247,8 +247,18 @@ function launchPomodoroFlow(quizId, total) {
   pomodoroSettings.autoAdvance         = document.getElementById('pomoAutoAdv')?.checked!==false;
   pomodoroSettings.shuffleOptions      = document.getElementById('pomoShuffleOpts')?.checked===true;
 
-  const qs = quiz.questions.slice(s-1, e);
-  if(!qs.length){ toast('No questions in that range','error'); return; }
+  const rawQs = quiz.questions.slice(s-1, e);
+  if(!rawQs.length){ toast('No questions in that range','error'); return; }
+
+  // Shuffle options within each question if enabled (default: ON)
+  const _shuffleOpts = (arr) => arr.map(q => {
+    if (!Array.isArray(q.options) || q.options.length < 2) return q;
+    const correctText = q.options[q.correctIndex];
+    const shuffled = [...q.options].sort(() => Math.random() - 0.5);
+    return { ...q, options: shuffled, correctIndex: shuffled.indexOf(correctText) };
+  });
+
+  const qs = pomodoroSettings.shuffleOptions ? _shuffleOpts(rawQs) : rawQs;
 
   const sections=[];
   for(let i=0;i<qs.length;i+=pomodoroSettings.questionsPerSection)
