@@ -332,8 +332,8 @@ function openQuizSetup(challengeInfo, lockSelection) {
     if (timerBlock) timerBlock.style.display = '';
 
     // Restore normal (user-controlled) shuffle toggles for own quizzes.
-    if (shuffleQToggle) shuffleQToggle.disabled = false;
-    if (shuffleOptToggle) shuffleOptToggle.disabled = false;
+    if (shuffleQToggle) { shuffleQToggle.disabled = false; shuffleQToggle.checked = true; }
+    if (shuffleOptToggle) { shuffleOptToggle.disabled = false; shuffleOptToggle.checked = true; }
     const lockedHint = document.getElementById('shuffle-locked-hint');
     if (lockedHint) lockedHint.style.display = 'none';
   }
