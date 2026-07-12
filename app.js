@@ -950,6 +950,7 @@ function renderQuizzes() {
       activeQuizQuestions = Array.isArray(quiz.questions) ? quiz.questions : [];
       activeFullQuizQuestions = [];
       activeQuizIsShared = false;
+      isBookmarkPractice = false;
       document.getElementById('setup-quiz-title').textContent = quiz.title;
       document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
       // Reset range selectors to cover the full quiz by default
@@ -1888,6 +1889,7 @@ let activeFullQuizQuestions = [];
 let activeQuizSessionId = null; // shared/group quiz session for leaderboard
 let currentShareQuizId  = null;
 let activeQuizIsShared  = false; // true for inbox/session quizzes — hides bookmark in result
+let isBookmarkPractice  = false; // true when quiz pool is built from Bookmarks tab — skips attempt/rank save (questions can span multiple quizzes)
 
 // ── QUIZ PLAYER INTEGRATION ────────────────────────────────────
 // Overrides renderPlayer to use real questions
@@ -1930,7 +1932,8 @@ function renderPlayerReal() {
   // Sync bookmark button state for current question
   const _bmBtn = document.getElementById('btn-q-bookmark');
   if (_bmBtn && activeQuizId) {
-    const _isBm = bookmarksIndexCache.has(`${activeQuizId}:${qKey(activeQuizQuestions[currentQ])}`);
+    const _curQ = activeQuizQuestions[currentQ];
+    const _isBm = bookmarksIndexCache.has(`${(_curQ && _curQ._srcQuizId) || activeQuizId}:${qKey(_curQ)}`);
     _bmBtn.classList.toggle('bookmarked', _isBm);
     _bmBtn.textContent = _isBm ? '🔖' : '🏷️';
     _bmBtn.title = _isBm ? 'Remove bookmark' : 'Bookmark this question';
@@ -2017,14 +2020,15 @@ async function saveAttempt() {
 
       if (!activeQuizIsShared) {
         const bmBtn = item.querySelector('.btn-review-bookmark');
+        const targetQuizId = q._srcQuizId || activeQuizId;
         // Show filled if already bookmarked — matched by stable question id, not position.
-        const bmKey = `${activeQuizId}:${qKey(q)}`;
+        const bmKey = `${targetQuizId}:${qKey(q)}`;
         if (bookmarksIndexCache.has(bmKey)) {
           bmBtn.textContent = '🔖'; bmBtn.classList.add('bookmarked'); bmBtn.title = 'Remove bookmark';
         }
         bmBtn.addEventListener('click', async e => {
           e.stopPropagation();
-          const result = await bookmarkQuestion(q, i);
+          const result = await bookmarkQuestion(q, i, targetQuizId);
           if (result === null) return;
           bmBtn.classList.toggle('bookmarked', result);
           bmBtn.textContent = result ? '🔖' : '🏷️';
@@ -2042,6 +2046,10 @@ async function saveAttempt() {
   if (lbBtn) lbBtn.style.display = activeQuizSessionId ? '' : 'none';
 
   // ── Save to DB then compute rank ──
+  // Bookmark-practice sessions pull questions from multiple quizzes, so
+  // there's no single quiz_id to attach a real attempt/rank to — skip.
+  if (isBookmarkPractice) return;
+
   sb.from('quiz_attempts').insert({
     user_id:    currentUser.id,
     quiz_id:    activeQuizId,
@@ -2809,6 +2817,7 @@ async function renderSharedSessions(sessions) {
       activeFullQuizQuestions = [];
       activeQuizSessionId = s.id;
       activeQuizIsShared  = true;
+      isBookmarkPractice  = false;
       document.getElementById('setup-quiz-title').textContent = s.title;
       document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
       applySessionTimer(s.time_limit_seconds || 0);
@@ -2851,9 +2860,10 @@ function qKey(q) {
 // Toggles the bookmark: returns true if now bookmarked, false if removed, null on error.
 // Identity is the question's own id (qKey), NOT its position in the current
 // (possibly shuffled) array — positions are not stable across attempts.
-async function bookmarkQuestion(q, questionIndex) {
+async function bookmarkQuestion(q, questionIndex, quizIdOverride) {
   if (!currentUser || !q) return null;
-  if (!activeQuizId) { toast('Open this quiz from its folder to bookmark questions.', 'error'); return null; }
+  const targetQuizId = quizIdOverride || activeQuizId;
+  if (!targetQuizId) { toast('Open this quiz from its folder to bookmark questions.', 'error'); return null; }
 
   const qid = qKey(q);
   if (typeof questionIndex !== 'number' || questionIndex < 0) {
@@ -2865,7 +2875,7 @@ async function bookmarkQuestion(q, questionIndex) {
   const { data: existing } = await sb.from('bookmarks')
     .select('id')
     .eq('user_id', currentUser.id)
-    .eq('quiz_id', activeQuizId)
+    .eq('quiz_id', targetQuizId)
     .eq('question_id', qid)
     .maybeSingle();
 
@@ -2878,8 +2888,8 @@ async function bookmarkQuestion(q, questionIndex) {
 
   const { error } = await sb.from('bookmarks').upsert({
     user_id: currentUser.id,
-    quiz_id: activeQuizId,
-    quiz_title: activeQuizTitle || '',
+    quiz_id: targetQuizId,
+    quiz_title: (targetQuizId === activeQuizId ? activeQuizTitle : '') || '',
     question_id: qid,
     question_index: questionIndex,
     question_text: q.question || '',
@@ -2915,8 +2925,9 @@ async function bookmarkCurrentQuestion() {
   if (!currentUser || !activeQuizId) return;
   const q = activeQuizQuestions[currentQ];
   if (!q) return;
+  const targetQuizId = q._srcQuizId || activeQuizId;
 
-  const result = await bookmarkQuestion(q, currentQ);
+  const result = await bookmarkQuestion(q, currentQ, targetQuizId);
   if (result === null) return; // error, no UI change
 
   const btn = document.getElementById('btn-q-bookmark');
@@ -2925,7 +2936,7 @@ async function bookmarkCurrentQuestion() {
     btn.textContent = result ? '🔖' : '🏷️';
     btn.title = result ? 'Remove bookmark' : 'Bookmark this question';
   }
-  const key = `${activeQuizId}:${qKey(q)}`;
+  const key = `${targetQuizId}:${qKey(q)}`;
   if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
 }
 
@@ -3700,6 +3711,7 @@ ${msg.body?.quiz_id && !isChallenge ? `<button class="btn btn--ghost btn--small 
           activeQuizQuestions = quiz.questions || [];
           activeQuizSessionId = msg.body.session_id || null;
           activeQuizIsShared  = true;
+          isBookmarkPractice  = false;
           document.getElementById('setup-quiz-title').textContent  = quiz.title;
           document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
           applySessionTimer(msg.body.time_limit_seconds || 0);
@@ -4372,6 +4384,7 @@ document.getElementById('btn-send-shared-quiz')?.addEventListener('click', async
   // they can start whenever they're ready, with identical settings, and
   // appear on the same shared leaderboard.
   activeQuizSessionId = sessionId;
+  isBookmarkPractice = false;
   if (!sameAsFull) {
     activeQuizId        = quizIdToSend;
     activeQuizTitle     = quizTitleToSend;
@@ -5468,6 +5481,49 @@ document.getElementById('btn-bookmark-quiz')?.addEventListener('click', () => {
   bookmarksFilter = 'all';
   renderBookmarkFilters();
   renderBookmarks();
+});
+
+// Bookmarks toolbar: start a quiz using only the currently filtered bookmarks
+// (respects the "All" / per-quiz filter chip above the grid). Same quiz
+// pattern as any other quiz — question selection, shuffle, timer — because
+// it goes through the exact same openQuizSetup() screen.
+document.getElementById('btn-bookmark-practice')?.addEventListener('click', () => {
+  const pool = bookmarksFilter === 'all'
+    ? bookmarksCache
+    : bookmarksCache.filter(b => b.quiz_id === bookmarksFilter);
+
+  if (!pool.length) { toast('No bookmarks to practice yet.', 'error'); return; }
+
+  // Rebuild question objects from the saved bookmark snapshots. Each one
+  // carries its original quiz id (_srcQuizId) so bookmarking/unbookmarking
+  // during this mixed-source session still targets the right quiz.
+  activeQuizQuestions = pool.map(b => ({
+    id: b.question_id || null,
+    question: b.question_text,
+    options: Array.isArray(b.options) ? b.options : [],
+    correctIndex: typeof b.correct_index === 'number' ? b.correct_index : null,
+    explanation: b.explanation || '',
+    _srcQuizId: b.quiz_id
+  }));
+  activeFullQuizQuestions = [];
+  activeQuizId = 'bookmark-practice'; // sentinel — not a real quizzes.id, no attempt gets saved
+  activeQuizTitle = bookmarksFilter === 'all'
+    ? `📌 Bookmarked Questions (${activeQuizQuestions.length})`
+    : (pool[0]?.quiz_title ? `📌 ${pool[0].quiz_title} — Bookmarks` : '📌 Bookmarked Questions');
+  activeQuizSessionId = null;
+  activeQuizIsShared = false;
+  isBookmarkPractice = true;
+
+  document.getElementById('setup-quiz-title').textContent = activeQuizTitle;
+  document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
+  const rFrom = document.getElementById('range-from');
+  const rTo   = document.getElementById('range-to');
+  if (rFrom && rTo) {
+    rFrom.value = 1;
+    rTo.value = activeQuizQuestions.length;
+    rFrom.dispatchEvent(new Event('change'));
+  }
+  openQuizSetup(null);
 });
 
 // Bookmarks toolbar: flip all cards
