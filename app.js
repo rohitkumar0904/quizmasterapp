@@ -852,6 +852,47 @@ async function loadQuizzes(folderId) {
   renderQuizzes();
 }
 
+// Starts a bookmark-only practice quiz scoped to ONE quiz folder slip
+// (the "🔖 Bookmarked" button next to Start Quiz / Flashcards). Same setup
+// screen and same mixed-source-safe handling as the Bookmarks tab's
+// "▶ Practice Quiz" button, just pre-filtered to this quiz's own bookmarks.
+async function startBookmarkPracticeForQuiz(quizId, quizTitle) {
+  if (!currentUser) return;
+  const { data, error } = await sb.from('bookmarks')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('quiz_id', quizId);
+
+  if (error) { toast('Could not load bookmarks.', 'error'); return; }
+  if (!data || !data.length) { toast('No bookmarked questions in this quiz yet.', 'info'); return; }
+
+  activeQuizQuestions = data.map(b => ({
+    id: b.question_id || null,
+    question: b.question_text,
+    options: Array.isArray(b.options) ? b.options : [],
+    correctIndex: typeof b.correct_index === 'number' ? b.correct_index : null,
+    explanation: b.explanation || '',
+    _srcQuizId: b.quiz_id
+  }));
+  activeFullQuizQuestions = [];
+  activeQuizId = 'bookmark-practice'; // sentinel — not a real quizzes.id, no attempt gets saved
+  activeQuizTitle = `📌 ${quizTitle} — Bookmarked (${activeQuizQuestions.length})`;
+  activeQuizSessionId = null;
+  activeQuizIsShared = false;
+  isBookmarkPractice = true;
+
+  document.getElementById('setup-quiz-title').textContent = activeQuizTitle;
+  document.getElementById('setup-quiz-total').textContent = activeQuizQuestions.length;
+  const rFrom = document.getElementById('range-from');
+  const rTo   = document.getElementById('range-to');
+  if (rFrom && rTo) {
+    rFrom.value = 1;
+    rTo.value = activeQuizQuestions.length;
+    rFrom.dispatchEvent(new Event('change'));
+  }
+  openQuizSetup(null);
+}
+
 function renderQuizzes() {
   const list = document.getElementById('quiz-list');
   if (!list) return;
@@ -889,6 +930,7 @@ function renderQuizzes() {
         <button class="btn btn--primary btn--small btn-start-quiz-real" data-quiz-id="${quiz.id}">▶ Start Quiz</button>
         <button class="btn btn--ghost btn--small btn-flashcard-quiz-real" data-quiz-id="${quiz.id}">⬡ Flashcards</button>
         <button class="btn btn--ghost btn--small btn-pomodoro-quiz" data-quiz-id="${quiz.id}" title="Pomodoro">🍅</button>
+        <button class="btn btn--ghost btn--small btn-bookmark-quiz-real" data-quiz-id="${quiz.id}" title="Practice only bookmarked questions from this quiz">🔖 Bookmarked</button>
         <button class="btn btn--ghost btn--small btn-share-quiz-real" data-quiz-id="${quiz.id}">↗ Share</button>
         <button class="btn btn--ghost btn--small btn-rename-quiz" data-quiz-id="${quiz.id}" title="Rename quiz">✏️</button>
         <button class="btn btn--ghost btn--small btn-delete-quiz" data-quiz-id="${quiz.id}">🗑️</button>
@@ -962,6 +1004,10 @@ function renderQuizzes() {
         rFrom.dispatchEvent(new Event('change'));
       }
       openQuizSetup(null);
+    });
+
+    slip.querySelector('.btn-bookmark-quiz-real').addEventListener('click', () => {
+      startBookmarkPracticeForQuiz(quiz.id, quiz.title);
     });
 
     // Flashcards
