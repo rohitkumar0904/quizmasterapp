@@ -852,6 +852,38 @@ async function loadQuizzes(folderId) {
   renderQuizzes();
 }
 
+// Orders a list of bookmark rows the same way those questions appear in the
+// Flashcards view for their quiz (i.e. the quiz's own current question
+// order) instead of by when they were bookmarked. If the pool spans several
+// quizzes (the "All" filter in the Bookmarks tab), groups by quiz first and
+// preserves each quiz's internal sequence within its group.
+async function orderBookmarksLikeFlashcards(pool) {
+  const quizIds = [...new Set(pool.map(b => b.quiz_id))];
+  const orderMaps = new Map(); // quizId -> Map(questionId -> index in quiz.questions)
+
+  for (const qid of quizIds) {
+    let quiz = quizzesCache.find(q => q.id === qid);
+    if (!quiz) {
+      const { data } = await sb.from('quizzes').select('id, questions').eq('id', qid).single();
+      quiz = data;
+    }
+    const m = new Map();
+    if (quiz && Array.isArray(quiz.questions)) {
+      quiz.questions.forEach((q, i) => m.set(String(q.id), i));
+    }
+    orderMaps.set(qid, m);
+  }
+
+  return [...pool].sort((a, b) => {
+    if (a.quiz_id !== b.quiz_id) return String(a.quiz_id).localeCompare(String(b.quiz_id));
+    const am = orderMaps.get(a.quiz_id);
+    const bm = orderMaps.get(b.quiz_id);
+    const ai = am && am.has(String(a.question_id)) ? am.get(String(a.question_id)) : Infinity;
+    const bi = bm && bm.has(String(b.question_id)) ? bm.get(String(b.question_id)) : Infinity;
+    return ai - bi;
+  });
+}
+
 // Starts a bookmark-only practice quiz scoped to ONE quiz folder slip
 // (the "🔖 Bookmarked" button next to Start Quiz / Flashcards). Same setup
 // screen and same mixed-source-safe handling as the Bookmarks tab's
@@ -866,7 +898,10 @@ async function startBookmarkPracticeForQuiz(quizId, quizTitle) {
   if (error) { toast('Could not load bookmarks.', 'error'); return; }
   if (!data || !data.length) { toast('No bookmarked questions in this quiz yet.', 'info'); return; }
 
-  activeQuizQuestions = data.map(b => ({
+  // Same sequence as Flashcards, not bookmark creation order.
+  const ordered = await orderBookmarksLikeFlashcards(data);
+
+  activeQuizQuestions = ordered.map(b => ({
     id: b.question_id || null,
     question: b.question_text,
     options: Array.isArray(b.options) ? b.options : [],
@@ -891,6 +926,10 @@ async function startBookmarkPracticeForQuiz(quizId, quizTitle) {
     rFrom.dispatchEvent(new Event('change'));
   }
   openQuizSetup(null);
+  // Preserve the Flashcards-matching sequence by default — user can still
+  // flip this toggle back on manually if they want it shuffled instead.
+  const stq = document.getElementById('toggle-shuffle-q');
+  if (stq) stq.checked = false;
 }
 
 function renderQuizzes() {
@@ -5533,12 +5572,15 @@ document.getElementById('btn-bookmark-quiz')?.addEventListener('click', () => {
 // (respects the "All" / per-quiz filter chip above the grid). Same quiz
 // pattern as any other quiz — question selection, shuffle, timer — because
 // it goes through the exact same openQuizSetup() screen.
-document.getElementById('btn-bookmark-practice')?.addEventListener('click', () => {
-  const pool = bookmarksFilter === 'all'
+document.getElementById('btn-bookmark-practice')?.addEventListener('click', async () => {
+  const rawPool = bookmarksFilter === 'all'
     ? bookmarksCache
     : bookmarksCache.filter(b => b.quiz_id === bookmarksFilter);
 
-  if (!pool.length) { toast('No bookmarks to practice yet.', 'error'); return; }
+  if (!rawPool.length) { toast('No bookmarks to practice yet.', 'error'); return; }
+
+  // Same sequence as Flashcards, not bookmark creation order.
+  const pool = await orderBookmarksLikeFlashcards(rawPool);
 
   // Rebuild question objects from the saved bookmark snapshots. Each one
   // carries its original quiz id (_srcQuizId) so bookmarking/unbookmarking
@@ -5570,6 +5612,10 @@ document.getElementById('btn-bookmark-practice')?.addEventListener('click', () =
     rFrom.dispatchEvent(new Event('change'));
   }
   openQuizSetup(null);
+  // Preserve the Flashcards-matching sequence by default — user can still
+  // flip this toggle back on manually if they want it shuffled instead.
+  const stq = document.getElementById('toggle-shuffle-q');
+  if (stq) stq.checked = false;
 });
 
 // Bookmarks toolbar: flip all cards
