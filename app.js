@@ -1930,7 +1930,7 @@ function renderPlayerReal() {
   // Sync bookmark button state for current question
   const _bmBtn = document.getElementById('btn-q-bookmark');
   if (_bmBtn && activeQuizId) {
-    const _isBm = bookmarksIndexCache.has(`${activeQuizId}:${currentQ}`);
+    const _isBm = bookmarksIndexCache.has(`${activeQuizId}:${qKey(activeQuizQuestions[currentQ])}`);
     _bmBtn.classList.toggle('bookmarked', _isBm);
     _bmBtn.textContent = _isBm ? '🔖' : '🏷️';
     _bmBtn.title = _isBm ? 'Remove bookmark' : 'Bookmark this question';
@@ -2017,8 +2017,8 @@ async function saveAttempt() {
 
       if (!activeQuizIsShared) {
         const bmBtn = item.querySelector('.btn-review-bookmark');
-        // Show filled if already bookmarked
-        const bmKey = `${activeQuizId}:${i}`;
+        // Show filled if already bookmarked — matched by stable question id, not position.
+        const bmKey = `${activeQuizId}:${qKey(q)}`;
         if (bookmarksIndexCache.has(bmKey)) {
           bmBtn.textContent = '🔖'; bmBtn.classList.add('bookmarked'); bmBtn.title = 'Remove bookmark';
         }
@@ -2831,24 +2831,42 @@ async function renderSharedSessions(sessions) {
 }
 
 
+// Stable identity for a question that survives shuffling/reordering.
+// Every question gets a persistent q.id ('q1', 'q2', ...) at creation time —
+// use that instead of its array position, which changes every time the quiz
+// is shuffled (random order, random pick, range select, etc). Falls back to
+// a text hash only for the rare legacy question with no id at all.
+function qKey(q) {
+  if (q && q.id) return String(q.id);
+  if (q && q.question) {
+    let h = 0;
+    const s = q.question;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return 'h' + h;
+  }
+  return 'unknown';
+}
+
 // Bookmark any question object directly (used by flashcard buttons)
 // Toggles the bookmark: returns true if now bookmarked, false if removed, null on error.
-// Pass explicit questionIndex to avoid indexOf object-reference mismatch bug.
+// Identity is the question's own id (qKey), NOT its position in the current
+// (possibly shuffled) array — positions are not stable across attempts.
 async function bookmarkQuestion(q, questionIndex) {
   if (!currentUser || !q) return null;
   if (!activeQuizId) { toast('Open this quiz from its folder to bookmark questions.', 'error'); return null; }
 
+  const qid = qKey(q);
   if (typeof questionIndex !== 'number' || questionIndex < 0) {
     const idx = activeQuizQuestions.indexOf(q);
     questionIndex = idx >= 0 ? idx : 0;
   }
 
-  // Check if already bookmarked
+  // Check if already bookmarked — matched by stable question id, not index.
   const { data: existing } = await sb.from('bookmarks')
     .select('id')
     .eq('user_id', currentUser.id)
     .eq('quiz_id', activeQuizId)
-    .eq('question_index', questionIndex)
+    .eq('question_id', qid)
     .maybeSingle();
 
   if (existing) {
@@ -2862,28 +2880,33 @@ async function bookmarkQuestion(q, questionIndex) {
     user_id: currentUser.id,
     quiz_id: activeQuizId,
     quiz_title: activeQuizTitle || '',
+    question_id: qid,
     question_index: questionIndex,
     question_text: q.question || '',
     options: Array.isArray(q.options) ? q.options : [],
     correct_index: typeof q.correctIndex === 'number' ? q.correctIndex : null,
     explanation: q.explanation || ''
-  }, { onConflict: 'user_id,quiz_id,question_index' });
+  }, { onConflict: 'user_id,quiz_id,question_id' });
 
   if (!error) { toast('Question bookmarked!', 'success'); return true; }
   toast('Could not bookmark question.', 'error');
   return null;
 }
 
-// Returns a Set of "quizId:questionIndex" keys for the current user's bookmarks.
+// Returns a Set of "quizId:questionId" keys for the current user's bookmarks.
 let bookmarksIndexCache = new Set();
 async function refreshBookmarksIndex() {
   bookmarksIndexCache = new Set();
   if (!currentUser) return bookmarksIndexCache;
   const { data, error } = await sb.from('bookmarks')
-    .select('quiz_id, question_index')
+    .select('quiz_id, question_id')
     .eq('user_id', currentUser.id);
   if (!error && data) {
-    data.forEach(b => bookmarksIndexCache.add(`${b.quiz_id}:${b.question_index}`));
+    // Legacy rows saved before this fix may have a null question_id —
+    // skip them here (their content is still safe in the Bookmarks tab,
+    // they just won't light up the bookmark icon during a quiz/flashcards
+    // until you re-tap bookmark on them once).
+    data.forEach(b => { if (b.question_id) bookmarksIndexCache.add(`${b.quiz_id}:${b.question_id}`); });
   }
   return bookmarksIndexCache;
 }
@@ -2902,7 +2925,7 @@ async function bookmarkCurrentQuestion() {
     btn.textContent = result ? '🔖' : '🏷️';
     btn.title = result ? 'Remove bookmark' : 'Bookmark this question';
   }
-  const key = `${activeQuizId}:${currentQ}`;
+  const key = `${activeQuizId}:${qKey(q)}`;
   if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
 }
 
@@ -3015,7 +3038,7 @@ function renderBookmarks() {
       e.stopPropagation();
       await sb.from('bookmarks').delete().eq('id', b.id);
       bookmarksCache = bookmarksCache.filter(x => x.id !== b.id);
-      bookmarksIndexCache.delete(`${b.quiz_id}:${b.question_index}`);
+      bookmarksIndexCache.delete(`${b.quiz_id}:${b.question_id}`);
       renderBookmarkFilters();
       renderBookmarks();
       toast('Bookmark removed.', 'info');
@@ -4452,7 +4475,7 @@ async function renderFlashcards(questions, setName) {
 
   questions.forEach((q, i) => {
     const correctOpt = q.options?.[q.correctIndex] || 'N/A';
-    const isBookmarked = activeQuizId ? bookmarksIndexCache.has(`${activeQuizId}:${i}`) : false;
+    const isBookmarked = activeQuizId ? bookmarksIndexCache.has(`${activeQuizId}:${qKey(q)}`) : false;
     const card = document.createElement('div');
     card.className = 'flash-card';
     card.dataset.flashIdx = i;
@@ -4532,7 +4555,7 @@ async function renderFlashcards(questions, setName) {
         card.classList.toggle('flash-card--bookmarked', result);
         card.dataset.bookmarked = result ? '1' : '0';
         if (activeQuizId) {
-          const key = `${activeQuizId}:${i}`;
+          const key = `${activeQuizId}:${qKey(q)}`;
           if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
         }
         applyFlashFilter();
