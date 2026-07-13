@@ -4550,10 +4550,102 @@ async function removePinFromDb(type, id) {
 // ── FLASHCARDS (from real questions) ─────────────────────────
 let flashFilter = 'all'; // 'all' or 'bookmarked'
 
+// Builds one flashcard DOM element with all its bindings. Extracted out of
+// renderFlashcards so a single card can be rebuilt in place after an edit,
+// without touching (or scroll-jumping) the rest of the grid.
+function buildFlashCardEl(q, i, isBookmarked) {
+  const correctOpt = q.options?.[q.correctIndex] || 'N/A';
+  const card = document.createElement('div');
+  card.className = 'flash-card';
+  card.dataset.flashIdx = i;
+  card.dataset.bookmarked = isBookmarked ? '1' : '0';
+  if (isBookmarked) card.classList.add('flash-card--bookmarked');
+
+  const optionsList = Array.isArray(q.options) ? q.options.map((opt, idx) => {
+    const marker = String.fromCharCode(65 + idx); // A, B, C, D
+    const isCorrect = idx === q.correctIndex;
+    return `<li class="${isCorrect ? 'correct-opt' : ''}">`
+      + `<span class="option-marker">${marker}</span>${escHtml(opt)}</li>`;
+  }).join('') : '';
+
+  card.innerHTML = `
+    <div class="flash-card-inner">
+      <div class="flash-card-face flash-card-front">
+        <div class="flash-card-head">
+          <span class="flash-num">${i + 1}</span>
+          <div class="flash-actions">
+            <button class="icon-btn" title="Edit question">✏️</button>
+            <button class="icon-btn" title="Search online">🔍</button>
+            <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
+          </div>
+        </div>
+        <p class="flash-question">${escHtml(q.question || '')}</p>
+        ${optionsList ? `<ul class="flash-card-options">${optionsList}</ul>` : ''}
+        <p class="flash-hint">Click to reveal answer</p>
+      </div>
+      <div class="flash-card-face flash-card-back">
+        <div class="flash-card-head">
+          <span class="flash-num">${i + 1}</span>
+          <div class="flash-actions">
+            <button class="icon-btn" title="Edit question">✏️</button>
+            <button class="icon-btn" title="Search online">🔍</button>
+            <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
+          </div>
+        </div>
+        <p class="flash-answer-line">✓ ${escHtml(correctOpt)}</p>
+        ${q.explanation ? `<p class="flash-explanation-line">${escHtml(q.explanation)}</p>` : ''}
+      </div>
+    </div>
+  `;
+
+  // Flip on card click (not on button click)
+  card.addEventListener('click', e => {
+    if (e.target.closest('.icon-btn')) return;
+    card.classList.toggle('flipped');
+  });
+
+  // Edit buttons (both front and back)
+  card.querySelectorAll('.icon-btn[title="Edit question"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      openFlashcardEditor(Number(card.dataset.flashIdx), card);
+    });
+  });
+
+  // Search buttons (both front and back)
+  card.querySelectorAll('.icon-btn[title="Search online"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      window.open('https://www.google.com/search?q=' + encodeURIComponent(q.question || ''), '_blank');
+    });
+  });
+
+  // Bookmark buttons (both front and back)
+  card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const result = await bookmarkQuestion(q, Number(card.dataset.flashIdx)); // pass explicitly — avoids indexOf mismatch
+      if (result === null) return; // error — no UI change
+      card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(b => {
+        b.classList.toggle('bookmarked', result);
+        b.textContent = result ? '🔖' : '🏷️';
+      });
+      card.classList.toggle('flash-card--bookmarked', result);
+      card.dataset.bookmarked = result ? '1' : '0';
+      if (activeQuizId) {
+        const key = `${activeQuizId}:${qKey(q)}`;
+        if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
+      }
+      applyFlashFilter();
+    });
+  });
+
+  return card;
+}
+
 async function renderFlashcards(questions, setName) {
   const grid = document.getElementById('flash-grid');
   if (!grid) return;
-  grid.innerHTML = '';
 
   flashFilter = 'all';
   document.querySelectorAll('#flash-filter-bar [data-flash-filter]').forEach(b =>
@@ -4569,99 +4661,19 @@ async function renderFlashcards(questions, setName) {
     return;
   }
 
+  // Fetch bookmark state BEFORE touching the DOM. Clearing the grid first
+  // and only then awaiting would leave it empty on-screen for a moment,
+  // which collapses its height and snaps the page's scroll back to the
+  // top — this ordering keeps that from ever happening.
   await refreshBookmarksIndex();
 
+  const frag = document.createDocumentFragment();
   questions.forEach((q, i) => {
-    const correctOpt = q.options?.[q.correctIndex] || 'N/A';
     const isBookmarked = activeQuizId ? bookmarksIndexCache.has(`${activeQuizId}:${qKey(q)}`) : false;
-    const card = document.createElement('div');
-    card.className = 'flash-card';
-    card.dataset.flashIdx = i;
-    card.dataset.bookmarked = isBookmarked ? '1' : '0';
-    if (isBookmarked) card.classList.add('flash-card--bookmarked');
-
-    // Build options list for front face
-    const optionsList = Array.isArray(q.options) ? q.options.map((opt, idx) => {
-      const marker = String.fromCharCode(65 + idx); // A, B, C, D
-      const isCorrect = idx === q.correctIndex;
-      return `<li class="${isCorrect ? 'correct-opt' : ''}">`
-        + `<span class="option-marker">${marker}</span>${escHtml(opt)}</li>`;
-    }).join('') : '';
-
-    card.innerHTML = `
-      <div class="flash-card-inner">
-        <div class="flash-card-face flash-card-front">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-            <div class="flash-actions">
-              <button class="icon-btn" title="Edit question">✏️</button>
-              <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
-            </div>
-          </div>
-          <p class="flash-question">${escHtml(q.question || '')}</p>
-          ${optionsList ? `<ul class="flash-card-options">${optionsList}</ul>` : ''}
-          <p class="flash-hint">Click to reveal answer</p>
-        </div>
-        <div class="flash-card-face flash-card-back">
-          <div class="flash-card-head">
-            <span class="flash-num">${i + 1}</span>
-            <div class="flash-actions">
-              <button class="icon-btn" title="Edit question">✏️</button>
-              <button class="icon-btn" title="Search online">🔍</button>
-              <button class="icon-btn${isBookmarked ? ' bookmarked' : ''}" title="Bookmark">${isBookmarked ? '🔖' : '🏷️'}</button>
-            </div>
-          </div>
-          <p class="flash-answer-line">✓ ${escHtml(correctOpt)}</p>
-          ${q.explanation ? `<p class="flash-explanation-line">${escHtml(q.explanation)}</p>` : ''}
-        </div>
-      </div>
-    `;
-
-    // Flip on card click (not on button click)
-    card.addEventListener('click', e => {
-      if (e.target.closest('.icon-btn')) return;
-      card.classList.toggle('flipped');
-    });
-
-    // Edit buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Edit question"]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        openFlashcardEditor(i, card);
-      });
-    });
-
-    // Search buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Search online"]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        window.open('https://www.google.com/search?q=' + encodeURIComponent(q.question || ''), '_blank');
-      });
-    });
-
-    // Bookmark buttons (both front and back)
-    card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const result = await bookmarkQuestion(q, i); // pass i explicitly — avoids indexOf mismatch
-        if (result === null) return; // error — no UI change
-        card.querySelectorAll('.icon-btn[title="Bookmark"]').forEach(b => {
-          b.classList.toggle('bookmarked', result);
-          b.textContent = result ? '🔖' : '🏷️';
-        });
-        card.classList.toggle('flash-card--bookmarked', result);
-        card.dataset.bookmarked = result ? '1' : '0';
-        if (activeQuizId) {
-          const key = `${activeQuizId}:${qKey(q)}`;
-          if (result) bookmarksIndexCache.add(key); else bookmarksIndexCache.delete(key);
-        }
-        applyFlashFilter();
-      });
-    });
-
-    grid.appendChild(card);
+    frag.appendChild(buildFlashCardEl(q, i, isBookmarked));
   });
+  grid.innerHTML = '';
+  grid.appendChild(frag);
 
   applyFlashFilter();
 }
@@ -4752,7 +4764,20 @@ function openFlashcardEditor(questionIndex, cardEl) {
     const ok = await _saveQuizQuestions();
     if (ok) {
       m.remove();
-      renderFlashcards(activeQuizQuestions, activeQuizTitle);
+      cardEl.remove();
+      // Every card after the deleted one shifted down by one position —
+      // update their number badge and index so edit/bookmark buttons still
+      // target the right question (their listeners read dataset.flashIdx
+      // live, so this is all that's needed — no rebind required).
+      document.querySelectorAll('#flash-grid .flash-card').forEach(c => {
+        const oldIdx = Number(c.dataset.flashIdx);
+        if (oldIdx > questionIndex) {
+          const newIdx = oldIdx - 1;
+          c.dataset.flashIdx = newIdx;
+          c.querySelectorAll('.flash-num').forEach(n => { n.textContent = newIdx + 1; });
+        }
+      });
+      updateFlashCount();
       toast('Question deleted.', 'success');
     } else {
       activeQuizQuestions.splice(questionIndex, 0, q); // revert
@@ -4783,7 +4808,12 @@ function openFlashcardEditor(questionIndex, cardEl) {
     const ok = await _saveQuizQuestions();
     if (ok) {
       m.remove();
-      renderFlashcards(activeQuizQuestions, activeQuizTitle);
+      const isBookmarked = activeQuizId
+        ? bookmarksIndexCache.has(`${activeQuizId}:${qKey(activeQuizQuestions[questionIndex])}`)
+        : false;
+      const newCard = buildFlashCardEl(activeQuizQuestions[questionIndex], questionIndex, isBookmarked);
+      if (cardEl.classList.contains('flipped')) newCard.classList.add('flipped');
+      cardEl.replaceWith(newCard);
       toast('Question updated!', 'success');
     } else {
       activeQuizQuestions[questionIndex] = q; // revert
